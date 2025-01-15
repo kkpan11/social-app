@@ -11,36 +11,60 @@ export type CommonNavigatorParams = {
   ModerationMutedAccounts: undefined
   ModerationBlockedAccounts: undefined
   Settings: undefined
-  LanguageSettings: undefined
   Profile: {name: string; hideBackButton?: boolean}
   ProfileFollowers: {name: string}
   ProfileFollows: {name: string}
+  ProfileKnownFollowers: {name: string}
   ProfileList: {name: string; rkey: string}
   PostThread: {name: string; rkey: string}
   PostLikedBy: {name: string; rkey: string}
   PostRepostedBy: {name: string; rkey: string}
+  PostQuotes: {name: string; rkey: string}
   ProfileFeed: {name: string; rkey: string}
   ProfileFeedLikedBy: {name: string; rkey: string}
+  ProfileLabelerLikedBy: {name: string}
   Debug: undefined
+  DebugMod: undefined
+  SharedPreferencesTester: undefined
   Log: undefined
   Support: undefined
   PrivacyPolicy: undefined
   TermsOfService: undefined
   CommunityGuidelines: undefined
   CopyrightPolicy: undefined
+  LanguageSettings: undefined
   AppPasswords: undefined
   SavedFeeds: undefined
-  PreferencesHomeFeed: undefined
+  PreferencesFollowingFeed: undefined
   PreferencesThreads: undefined
   PreferencesExternalEmbeds: undefined
+  AccessibilitySettings: undefined
+  AppearanceSettings: undefined
+  AccountSettings: undefined
+  PrivacyAndSecuritySettings: undefined
+  ContentAndMediaSettings: undefined
+  AboutSettings: undefined
+  AppIconSettings: undefined
+  Search: {q?: string}
+  Hashtag: {tag: string; author?: string}
+  Topic: {topic: string}
+  MessagesConversation: {conversation: string; embed?: string}
+  MessagesSettings: undefined
+  NotificationSettings: undefined
+  Feeds: undefined
+  Start: {name: string; rkey: string}
+  StarterPack: {name: string; rkey: string; new?: boolean}
+  StarterPackShort: {code: string}
+  StarterPackWizard: undefined
+  StarterPackEdit: {rkey?: string}
 }
 
 export type BottomTabNavigatorParams = CommonNavigatorParams & {
   HomeTab: undefined
   SearchTab: undefined
-  FeedsTab: undefined
   NotificationsTab: undefined
   MyProfileTab: undefined
+  MessagesTab: undefined
 }
 
 export type HomeTabNavigatorParams = CommonNavigatorParams & {
@@ -51,10 +75,6 @@ export type SearchTabNavigatorParams = CommonNavigatorParams & {
   Search: {q?: string}
 }
 
-export type FeedsTabNavigatorParams = CommonNavigatorParams & {
-  Feeds: undefined
-}
-
 export type NotificationsTabNavigatorParams = CommonNavigatorParams & {
   Notifications: undefined
 }
@@ -63,11 +83,18 @@ export type MyProfileTabNavigatorParams = CommonNavigatorParams & {
   MyProfile: undefined
 }
 
+export type MessagesTabNavigatorParams = CommonNavigatorParams & {
+  Messages: {pushToConversation?: string; animation?: 'push' | 'pop'}
+}
+
 export type FlatNavigatorParams = CommonNavigatorParams & {
   Home: undefined
   Search: {q?: string}
   Feeds: undefined
   Notifications: undefined
+  Hashtag: {tag: string; author?: string}
+  Topic: {topic: string}
+  Messages: {pushToConversation?: string; animation?: 'push' | 'pop'}
 }
 
 export type AllNavigatorParams = CommonNavigatorParams & {
@@ -75,11 +102,19 @@ export type AllNavigatorParams = CommonNavigatorParams & {
   Home: undefined
   SearchTab: undefined
   Search: {q?: string}
-  FeedsTab: undefined
   Feeds: undefined
   NotificationsTab: undefined
   Notifications: undefined
   MyProfileTab: undefined
+  Hashtag: {tag: string; author?: string}
+  Topic: {topic: string}
+  MessagesTab: undefined
+  Messages: {animation?: 'push' | 'pop'}
+  Start: {name: string; rkey: string}
+  StarterPack: {name: string; rkey: string; new?: boolean}
+  StarterPackShort: {code: string}
+  StarterPackWizard: undefined
+  StarterPackEdit: {rkey?: string}
 }
 
 // NOTE

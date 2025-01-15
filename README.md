@@ -6,11 +6,11 @@ Get the app itself:
 
 - **Web: [bsky.app](https://bsky.app)**
 - **iOS: [App Store](https://apps.apple.com/us/app/bluesky-social/id6444370199)**
-- **Android: [Play Store](https://play.google.com/store/apps/details?id=xyz.blueskyweb.app&hl=en_US&gl=US)**
+- **Android: [Play Store](https://play.google.com/store/apps/details?id=xyz.blueskyweb.app)**
 
 ## Development Resources
 
-This is a [React Native](https://reactnative.dev/) application, written in the TypeScript programming language. It builds on the `atproto` TypeScript packages (like [`@atproto/api`](https://www.npmjs.com/package/@atproto/api)), code for which is also on open source, but in [a different git repository](https://github.com/bluesky-social/atproto).
+This is a [React Native](https://reactnative.dev/) application, written in the TypeScript programming language. It builds on the `atproto` TypeScript packages (like [`@atproto/api`](https://www.npmjs.com/package/@atproto/api)), code for which is also open source, but in [a different git repository](https://github.com/bluesky-social/atproto).
 
 There is a small amount of Go language source code (in `./bskyweb/`), for a web service that returns the React Native Web application.
 
@@ -21,7 +21,7 @@ The Authenticated Transfer Protocol ("AT Protocol" or "atproto") is a decentrali
 - [Overview and Guides](https://atproto.com/guides/overview)
 - [Github Discussions](https://github.com/bluesky-social/atproto/discussions) 👈 Great place to ask questions
 - [Protocol Specifications](https://atproto.com/specs/atp)
-- [Blogpost on self-authenticating data structures](https://blueskyweb.xyz/blog/3-6-2022-a-self-authenticating-social-protocol)
+- [Blogpost on self-authenticating data structures](https://bsky.social/about/blog/3-6-2022-a-self-authenticating-social-protocol)
 
 The Bluesky Social application encompasses a set of schemas and APIs built in the overall AT Protocol framework. The namespace for these "Lexicons" is `app.bsky.*`.
 
@@ -42,10 +42,10 @@ The Bluesky Social application encompasses a set of schemas and APIs built in th
 - Open an issue and give some time for discussion before submitting a PR.
 - Stay away from PRs like...
   - Changing "Post" to "Skeet."
-  - Refactoring the codebase, eg to replace mobx with redux or something.
+  - Refactoring the codebase, e.g., to replace MobX with Redux or something.
   - Adding entirely new features without prior discussion. 
 
-Remember, we serve a wide community of users. Our day to day involves us constantly asking "which top priority is our top priority." If you submit well-written PRs that solve problems concisely, that's an awesome contribution. Otherwise, as much as we'd love to accept your ideas and contributions, we really don't have the bandwidth. That's what forking is for!
+Remember, we serve a wide community of users. Our day-to-day involves us constantly asking "which top priority is our top priority." If you submit well-written PRs that solve problems concisely, that's an awesome contribution. Otherwise, as much as we'd love to accept your ideas and contributions, we really don't have the bandwidth. That's what forking is for!
 
 ## Forking guidelines
 
@@ -63,9 +63,7 @@ If you discover any security issues, please send an email to security@bsky.app. 
 
 ## Are you a developer interested in building on atproto?
 
-Bluesky is an open social network built on the AT Protocol, a flexible technology that will never lock developers out of the ecosystems that they help build. With atproto, third-party can be as seamless as first-party through custom feeds, federated services, clients, and more.
-
-If you're a developer interested in building on atproto, we'd love to email you a Bluesky invite code. Simply share your GitHub (or similar) profile with us via [this form](https://forms.gle/BF21oxVNZiDjDhXF9).
+Bluesky is an open social network built on the AT Protocol, a flexible technology that will never lock developers out of the ecosystems that they help build. With atproto, third-party integration can be as seamless as first-party through custom feeds, federated services, clients, and more.
 
 ## License (MIT)
 

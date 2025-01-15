@@ -1,29 +1,27 @@
 import React from 'react'
-import {
-  GestureResponderEvent,
-  Linking,
-  TouchableWithoutFeedback,
-} from 'react-native'
-import {
-  useLinkProps,
-  useNavigation,
-  StackActions,
-} from '@react-navigation/native'
+import {GestureResponderEvent} from 'react-native'
 import {sanitizeUrl} from '@braintree/sanitize-url'
+import {StackActions, useLinkProps} from '@react-navigation/native'
 
-import {useInteractionState} from '#/components/hooks/useInteractionState'
-import {isWeb} from '#/platform/detection'
-import {useTheme, web, flatten, TextStyleProp} from '#/alf'
-import {Button, ButtonProps} from '#/components/Button'
-import {AllNavigatorParams, NavigationProp} from '#/lib/routes/types'
+import {BSKY_DOWNLOAD_URL} from '#/lib/constants'
+import {useNavigationDeduped} from '#/lib/hooks/useNavigationDeduped'
+import {useOpenLink} from '#/lib/hooks/useOpenLink'
+import {AllNavigatorParams} from '#/lib/routes/types'
+import {shareUrl} from '#/lib/sharing'
 import {
   convertBskyAppUrlIfNeeded,
+  isBskyDownloadUrl,
   isExternalUrl,
   linkRequiresWarning,
 } from '#/lib/strings/url-helpers'
+import {isNative, isWeb} from '#/platform/detection'
+import {shouldClickOpenNewTab} from '#/platform/urls'
 import {useModalControls} from '#/state/modals'
+import {atoms as a, flatten, TextStyleProp, useTheme, web} from '#/alf'
+import {Button, ButtonProps} from '#/components/Button'
+import {useInteractionState} from '#/components/hooks/useInteractionState'
+import {Text, TextProps} from '#/components/Typography'
 import {router} from '#/routes'
-import {Text} from '#/components/Typography'
 
 /**
  * Only available within a `Link`, since that inherits from `Button`.
@@ -35,6 +33,8 @@ type BaseLinkProps = Pick<
   Parameters<typeof useLinkProps<AllNavigatorParams>>[0],
   'to'
 > & {
+  testID?: string
+
   /**
    * The React Navigation `StackAction` to perform when the link is pressed.
    */
@@ -45,65 +45,83 @@ type BaseLinkProps = Pick<
    *
    * Note: atm this only works for `InlineLink`s with a string child.
    */
-  warnOnMismatchingTextChild?: boolean
+  disableMismatchWarning?: boolean
+
+  /**
+   * Callback for when the link is pressed. Prevent default and return `false`
+   * to exit early and prevent navigation.
+   *
+   * DO NOT use this for navigation, that's what the `to` prop is for.
+   */
+  onPress?: (e: GestureResponderEvent) => void | false
+
+  /**
+   * Web-only attribute. Sets `download` attr on web.
+   */
+  download?: string
+
+  /**
+   * Native-only attribute. If true, will open the share sheet on long press.
+   */
+  shareOnLongPress?: boolean
 }
 
 export function useLink({
   to,
   displayText,
   action = 'push',
-  warnOnMismatchingTextChild,
+  disableMismatchWarning,
+  onPress: outerOnPress,
+  shareOnLongPress,
 }: BaseLinkProps & {
   displayText: string
 }) {
-  const navigation = useNavigation<NavigationProp>()
+  const navigation = useNavigationDeduped()
   const {href} = useLinkProps<AllNavigatorParams>({
     to:
       typeof to === 'string' ? convertBskyAppUrlIfNeeded(sanitizeUrl(to)) : to,
   })
   const isExternal = isExternalUrl(href)
   const {openModal, closeModal} = useModalControls()
+  const openLink = useOpenLink()
 
   const onPress = React.useCallback(
     (e: GestureResponderEvent) => {
+      const exitEarlyIfFalse = outerOnPress?.(e)
+
+      if (exitEarlyIfFalse === false) return
+
       const requiresWarning = Boolean(
-        warnOnMismatchingTextChild &&
+        !disableMismatchWarning &&
           displayText &&
           isExternal &&
           linkRequiresWarning(href, displayText),
       )
 
-      if (requiresWarning) {
+      if (isWeb) {
         e.preventDefault()
+      }
 
+      if (requiresWarning) {
         openModal({
           name: 'link-warning',
           text: displayText,
           href: href,
         })
       } else {
-        e.preventDefault()
-
         if (isExternal) {
-          Linking.openURL(href)
+          openLink(href)
         } else {
-          /**
-           * A `GestureResponderEvent`, but cast to `any` to avoid using a bunch
-           * of @ts-ignore below.
-           */
-          const event = e as any
-          const isMiddleClick = isWeb && event.button === 1
-          const isMetaKey =
-            isWeb &&
-            (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey)
-          const shouldOpenInNewTab = isMetaKey || isMiddleClick
+          const shouldOpenInNewTab = shouldClickOpenNewTab(e)
 
-          if (
+          if (isBskyDownloadUrl(href)) {
+            shareUrl(BSKY_DOWNLOAD_URL)
+          } else if (
             shouldOpenInNewTab ||
             href.startsWith('http') ||
             href.startsWith('mailto')
           ) {
-            Linking.openURL(href)
+            openLink(href)
           } else {
             closeModal() // close any active modals
 
@@ -124,31 +142,52 @@ export function useLink({
       }
     },
     [
-      href,
-      isExternal,
-      warnOnMismatchingTextChild,
-      navigation,
-      action,
+      outerOnPress,
+      disableMismatchWarning,
       displayText,
-      closeModal,
+      isExternal,
+      href,
       openModal,
+      openLink,
+      closeModal,
+      action,
+      navigation,
     ],
   )
+
+  const handleLongPress = React.useCallback(() => {
+    const requiresWarning = Boolean(
+      !disableMismatchWarning &&
+        displayText &&
+        isExternal &&
+        linkRequiresWarning(href, displayText),
+    )
+
+    if (requiresWarning) {
+      openModal({
+        name: 'link-warning',
+        text: displayText,
+        href: href,
+        share: true,
+      })
+    } else {
+      shareUrl(href)
+    }
+  }, [disableMismatchWarning, displayText, href, isExternal, openModal])
+
+  const onLongPress =
+    isNative && isExternal && shareOnLongPress ? handleLongPress : undefined
 
   return {
     isExternal,
     href,
     onPress,
+    onLongPress,
   }
 }
 
-export type LinkProps = Omit<BaseLinkProps, 'warnOnMismatchingTextChild'> &
-  Omit<ButtonProps, 'style' | 'onPress' | 'disabled' | 'label'> & {
-    /**
-     * Label for a11y. Defaults to the href.
-     */
-    label?: string
-  }
+export type LinkProps = Omit<BaseLinkProps, 'disableMismatchWarning'> &
+  Omit<ButtonProps, 'onPress' | 'disabled'>
 
 /**
  * A interactive element that renders as a `<a>` tag on the web. On mobile it
@@ -158,28 +197,37 @@ export type LinkProps = Omit<BaseLinkProps, 'warnOnMismatchingTextChild'> &
  * Intended to behave as a web anchor tag. For more complex routing, use a
  * `Button`.
  */
-export function Link({children, to, action = 'push', ...rest}: LinkProps) {
+export function Link({
+  children,
+  to,
+  action = 'push',
+  onPress: outerOnPress,
+  download,
+  ...rest
+}: LinkProps) {
   const {href, isExternal, onPress} = useLink({
     to,
     displayText: typeof children === 'string' ? children : '',
     action,
+    onPress: outerOnPress,
   })
 
   return (
     <Button
-      label={href}
       {...rest}
+      style={[a.justify_start, flatten(rest.style)]}
       role="link"
       accessibilityRole="link"
       href={href}
-      onPress={onPress}
+      onPress={download ? undefined : onPress}
       {...web({
         hrefAttrs: {
-          target: isExternal ? 'blank' : undefined,
+          target: download ? undefined : isExternal ? 'blank' : undefined,
           rel: isExternal ? 'noopener noreferrer' : undefined,
+          download,
         },
         dataSet: {
-          // default to no underline, apply this ourselves
+          // no underline, only `InlineLink` has underlines
           noUnderline: '1',
         },
       })}>
@@ -190,74 +238,117 @@ export function Link({children, to, action = 'push', ...rest}: LinkProps) {
 
 export type InlineLinkProps = React.PropsWithChildren<
   BaseLinkProps &
-    TextStyleProp & {
-      /**
-       * Label for a11y. Defaults to the href.
-       */
-      label?: string
-    }
->
+    TextStyleProp &
+    Pick<TextProps, 'selectable' | 'numberOfLines'>
+> &
+  Pick<ButtonProps, 'label'> & {
+    disableUnderline?: boolean
+    title?: TextProps['title']
+  }
 
-export function InlineLink({
+export function InlineLinkText({
   children,
   to,
   action = 'push',
-  warnOnMismatchingTextChild,
+  disableMismatchWarning,
   style,
+  onPress: outerOnPress,
+  download,
+  selectable,
+  label,
+  shareOnLongPress,
+  disableUnderline,
   ...rest
 }: InlineLinkProps) {
   const t = useTheme()
   const stringChildren = typeof children === 'string'
-  const {href, isExternal, onPress} = useLink({
+  const {href, isExternal, onPress, onLongPress} = useLink({
     to,
     displayText: stringChildren ? children : '',
     action,
-    warnOnMismatchingTextChild,
+    disableMismatchWarning,
+    onPress: outerOnPress,
+    shareOnLongPress,
   })
-  const {state: focused, onIn: onFocus, onOut: onBlur} = useInteractionState()
   const {
-    state: pressed,
-    onIn: onPressIn,
-    onOut: onPressOut,
+    state: hovered,
+    onIn: onHoverIn,
+    onOut: onHoverOut,
   } = useInteractionState()
+  const flattenedStyle = flatten(style) || {}
 
   return (
-    <TouchableWithoutFeedback
-      accessibilityRole="button"
-      onPress={onPress}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      onFocus={onFocus}
-      onBlur={onBlur}>
-      <Text
-        label={href}
-        {...rest}
-        style={[
-          {color: t.palette.primary_500},
-          (focused || pressed) && {
-            outline: 0,
-            textDecorationLine: 'underline',
-            textDecorationColor: t.palette.primary_500,
+    <Text
+      selectable={selectable}
+      accessibilityHint=""
+      accessibilityLabel={label}
+      {...rest}
+      style={[
+        {color: t.palette.primary_500},
+        hovered &&
+          !disableUnderline && {
+            ...web({
+              outline: 0,
+              textDecorationLine: 'underline',
+              textDecorationColor:
+                flattenedStyle.color ?? t.palette.primary_500,
+            }),
           },
-          flatten(style),
-        ]}
-        role="link"
-        accessibilityRole="link"
-        href={href}
-        {...web({
-          hrefAttrs: {
-            target: isExternal ? 'blank' : undefined,
-            rel: isExternal ? 'noopener noreferrer' : undefined,
-          },
-          dataSet: stringChildren
-            ? {}
-            : {
-                // default to no underline, apply this ourselves
-                noUnderline: '1',
-              },
-        })}>
-        {children}
-      </Text>
-    </TouchableWithoutFeedback>
+        flattenedStyle,
+      ]}
+      role="link"
+      onPress={download ? undefined : onPress}
+      onLongPress={onLongPress}
+      onMouseEnter={onHoverIn}
+      onMouseLeave={onHoverOut}
+      accessibilityRole="link"
+      href={href}
+      {...web({
+        hrefAttrs: {
+          target: download ? undefined : isExternal ? 'blank' : undefined,
+          rel: isExternal ? 'noopener noreferrer' : undefined,
+          download,
+        },
+        dataSet: {
+          // default to no underline, apply this ourselves
+          noUnderline: '1',
+        },
+      })}>
+      {children}
+    </Text>
+  )
+}
+
+/**
+ * Utility to create a static `onPress` handler for a `Link` that would otherwise link to a URI
+ *
+ * Example:
+ *   `<Link {...createStaticClick(e => {...})} />`
+ */
+export function createStaticClick(
+  onPressHandler: Exclude<BaseLinkProps['onPress'], undefined>,
+): Pick<BaseLinkProps, 'to' | 'onPress'> {
+  return {
+    to: '#',
+    onPress(e: GestureResponderEvent) {
+      e.preventDefault()
+      onPressHandler(e)
+      return false
+    },
+  }
+}
+
+export function WebOnlyInlineLinkText({
+  children,
+  to,
+  onPress,
+  ...props
+}: InlineLinkProps) {
+  return isWeb ? (
+    <InlineLinkText {...props} to={to} onPress={onPress}>
+      {children}
+    </InlineLinkText>
+  ) : (
+    <Text {...props}>{children}</Text>
   )
 }

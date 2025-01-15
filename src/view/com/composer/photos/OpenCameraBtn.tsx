@@ -1,35 +1,37 @@
-import React, {useCallback} from 'react'
-import {TouchableOpacity, StyleSheet} from 'react-native'
-import {
-  FontAwesomeIcon,
-  FontAwesomeIconStyle,
-} from '@fortawesome/react-native-fontawesome'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useAnalytics} from 'lib/analytics/analytics'
-import {openCamera} from 'lib/media/picker'
-import {useCameraPermission} from 'lib/hooks/usePermissions'
-import {HITSLOP_10, POST_IMG_MAX} from 'lib/constants'
-import {GalleryModel} from 'state/models/media/gallery'
-import {isMobileWeb, isNative} from 'platform/detection'
-import {logger} from '#/logger'
-import {useLingui} from '@lingui/react'
+import {useCallback} from 'react'
+import * as MediaLibrary from 'expo-media-library'
 import {msg} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
+
+import {POST_IMG_MAX} from '#/lib/constants'
+import {useCameraPermission} from '#/lib/hooks/usePermissions'
+import {openCamera} from '#/lib/media/picker'
+import {logger} from '#/logger'
+import {isMobileWeb, isNative} from '#/platform/detection'
+import {ComposerImage, createComposerImage} from '#/state/gallery'
+import {atoms as a, useTheme} from '#/alf'
+import {Button} from '#/components/Button'
+import {Camera_Stroke2_Corner0_Rounded as Camera} from '#/components/icons/Camera'
 
 type Props = {
-  gallery: GalleryModel
+  disabled?: boolean
+  onAdd: (next: ComposerImage[]) => void
 }
 
-export function OpenCameraBtn({gallery}: Props) {
-  const pal = usePalette('default')
-  const {track} = useAnalytics()
+export function OpenCameraBtn({disabled, onAdd}: Props) {
   const {_} = useLingui()
   const {requestCameraAccessIfNeeded} = useCameraPermission()
+  const [mediaPermissionRes, requestMediaPermission] =
+    MediaLibrary.usePermissions({granularPermissions: ['photo']})
+  const t = useTheme()
 
   const onPressTakePicture = useCallback(async () => {
-    track('Composer:CameraOpened')
     try {
       if (!(await requestCameraAccessIfNeeded())) {
         return
+      }
+      if (!mediaPermissionRes?.granted && mediaPermissionRes?.canAskAgain) {
+        await requestMediaPermission()
       }
 
       const img = await openCamera({
@@ -38,12 +40,25 @@ export function OpenCameraBtn({gallery}: Props) {
         freeStyleCropEnabled: true,
       })
 
-      gallery.add(img)
+      // If we don't have permissions it's fine, we just wont save it. The post itself will still have access to
+      // the image even without these permissions
+      if (mediaPermissionRes) {
+        await MediaLibrary.createAssetAsync(img.path)
+      }
+
+      const res = await createComposerImage(img)
+
+      onAdd([res])
     } catch (err: any) {
       // ignore
       logger.warn('Error using camera', {error: err})
     }
-  }, [gallery, track, requestCameraAccessIfNeeded])
+  }, [
+    onAdd,
+    requestCameraAccessIfNeeded,
+    mediaPermissionRes,
+    requestMediaPermission,
+  ])
 
   const shouldShowCameraButton = isNative || isMobileWeb
   if (!shouldShowCameraButton) {
@@ -51,25 +66,17 @@ export function OpenCameraBtn({gallery}: Props) {
   }
 
   return (
-    <TouchableOpacity
+    <Button
       testID="openCameraButton"
       onPress={onPressTakePicture}
-      style={styles.button}
-      hitSlop={HITSLOP_10}
-      accessibilityRole="button"
-      accessibilityLabel={_(msg`Camera`)}
-      accessibilityHint={_(msg`Opens camera on device`)}>
-      <FontAwesomeIcon
-        icon="camera"
-        style={pal.link as FontAwesomeIconStyle}
-        size={24}
-      />
-    </TouchableOpacity>
+      label={_(msg`Camera`)}
+      accessibilityHint={_(msg`Opens camera on device`)}
+      style={a.p_sm}
+      variant="ghost"
+      shape="round"
+      color="primary"
+      disabled={disabled}>
+      <Camera size="lg" style={disabled && t.atoms.text_contrast_low} />
+    </Button>
   )
 }
-
-const styles = StyleSheet.create({
-  button: {
-    paddingHorizontal: 15,
-  },
-})

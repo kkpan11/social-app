@@ -14,40 +14,49 @@
 
 import React from 'react'
 import {
+  FlatList,
   FlatListProps,
   ScrollViewProps,
   StyleSheet,
   View,
   ViewProps,
 } from 'react-native'
-import {addStyle} from 'lib/styles'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
 import Animated from 'react-native-reanimated'
+
+import {usePalette} from '#/lib/hooks/usePalette'
+import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
+import {addStyle} from '#/lib/styles'
 
 interface AddedProps {
   desktopFixedHeight?: boolean | number
 }
 
-export function CenteredView({
-  style,
-  sideBorders,
-  ...props
-}: React.PropsWithChildren<ViewProps & {sideBorders?: boolean}>) {
+/**
+ * @deprecated use `Layout` components
+ */
+export const CenteredView = React.forwardRef(function CenteredView(
+  {
+    style,
+    topBorder,
+    ...props
+  }: React.PropsWithChildren<
+    ViewProps & {sideBorders?: boolean; topBorder?: boolean}
+  >,
+  ref: React.Ref<View>,
+) {
   const pal = usePalette('default')
   const {isMobile} = useWebMediaQueries()
   if (!isMobile) {
     style = addStyle(style, styles.container)
   }
-  if (sideBorders) {
+  if (topBorder) {
     style = addStyle(style, {
-      borderLeftWidth: 1,
-      borderRightWidth: 1,
+      borderTopWidth: 1,
     })
     style = addStyle(style, pal.border)
   }
-  return <View style={style} {...props} />
-}
+  return <View ref={ref} style={style} {...props} />
+})
 
 export const FlatList_INTERNAL = React.forwardRef(function FlatListImpl<ItemT>(
   {
@@ -56,10 +65,11 @@ export const FlatList_INTERNAL = React.forwardRef(function FlatListImpl<ItemT>(
     contentOffset,
     desktopFixedHeight,
     ...props
-  }: React.PropsWithChildren<FlatListProps<ItemT> & AddedProps>,
-  ref: React.Ref<Animated.FlatList<ItemT>>,
+  }: React.PropsWithChildren<
+    Omit<FlatListProps<ItemT>, 'CellRendererComponent'> & AddedProps
+  >,
+  ref: React.Ref<FlatList<ItemT>>,
 ) {
-  const pal = usePalette('default')
   const {isMobile} = useWebMediaQueries()
   if (!isMobile) {
     contentContainerStyle = addStyle(
@@ -107,11 +117,7 @@ export const FlatList_INTERNAL = React.forwardRef(function FlatListImpl<ItemT>(
   return (
     <Animated.FlatList
       ref={ref}
-      contentContainerStyle={[
-        styles.contentContainer,
-        contentContainerStyle,
-        pal.border,
-      ]}
+      contentContainerStyle={[styles.contentContainer, contentContainerStyle]}
       style={style}
       contentOffset={contentOffset}
       {...props}
@@ -119,12 +125,13 @@ export const FlatList_INTERNAL = React.forwardRef(function FlatListImpl<ItemT>(
   )
 })
 
+/**
+ * @deprecated use `Layout` components
+ */
 export const ScrollView = React.forwardRef(function ScrollViewImpl(
   {contentContainerStyle, ...props}: React.PropsWithChildren<ScrollViewProps>,
   ref: React.Ref<Animated.ScrollView>,
 ) {
-  const pal = usePalette('default')
-
   const {isMobile} = useWebMediaQueries()
   if (!isMobile) {
     contentContainerStyle = addStyle(
@@ -134,11 +141,7 @@ export const ScrollView = React.forwardRef(function ScrollViewImpl(
   }
   return (
     <Animated.ScrollView
-      contentContainerStyle={[
-        styles.contentContainer,
-        contentContainerStyle,
-        pal.border,
-      ]}
+      contentContainerStyle={[styles.contentContainer, contentContainerStyle]}
       // @ts-ignore something is wrong with the reanimated types -prf
       ref={ref}
       {...props}
@@ -148,8 +151,6 @@ export const ScrollView = React.forwardRef(function ScrollViewImpl(
 
 const styles = StyleSheet.create({
   contentContainer: {
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
     // @ts-ignore web only
     minHeight: '100vh',
   },

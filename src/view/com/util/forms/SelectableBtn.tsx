@@ -1,8 +1,8 @@
-import React from 'react'
-import {Pressable, ViewStyle, StyleProp, StyleSheet} from 'react-native'
+import {Pressable, StyleProp, StyleSheet, ViewStyle} from 'react-native'
+
+import {usePalette} from '#/lib/hooks/usePalette'
+import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
 import {Text} from '../text/Text'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
 
 interface SelectableBtnProps {
   testID?: string
@@ -57,6 +57,7 @@ const styles = StyleSheet.create({
   btn: {
     flexDirection: 'row',
     justifyContent: 'center',
+    flexGrow: 1,
     borderWidth: 1,
     borderLeftWidth: 0,
     paddingHorizontal: 10,

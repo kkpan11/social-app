@@ -1,21 +1,18 @@
-import React, {useState, useCallback} from 'react'
+import {useCallback, useState} from 'react'
 import {StyleProp, StyleSheet, TextStyle, View, ViewStyle} from 'react-native'
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker'
+import DatePicker from 'react-native-date-picker'
 import {
   FontAwesomeIcon,
   FontAwesomeIconStyle,
 } from '@fortawesome/react-native-fontawesome'
-import {isIOS, isAndroid} from 'platform/detection'
-import {Button, ButtonType} from './Button'
-import {Text} from '../text/Text'
-import {TypographyVariant} from 'lib/ThemeContext'
-import {useTheme} from 'lib/ThemeContext'
-import {usePalette} from 'lib/hooks/usePalette'
-import {getLocales} from 'expo-localization'
+import {useLingui} from '@lingui/react'
 
-const LOCALE = getLocales()[0]
+import {usePalette} from '#/lib/hooks/usePalette'
+import {TypographyVariant} from '#/lib/ThemeContext'
+import {useTheme} from '#/lib/ThemeContext'
+import {isAndroid, isIOS} from '#/platform/detection'
+import {Text} from '../text/Text'
+import {Button, ButtonType} from './Button'
 
 interface Props {
   testID?: string
@@ -32,22 +29,15 @@ interface Props {
 }
 
 export function DateInput(props: Props) {
+  const {i18n} = useLingui()
   const [show, setShow] = useState(false)
   const theme = useTheme()
   const pal = usePalette('default')
 
-  const formatter = React.useMemo(() => {
-    return new Intl.DateTimeFormat(LOCALE.languageTag, {
-      timeZone: props.handleAsUTC ? 'UTC' : undefined,
-    })
-  }, [props.handleAsUTC])
-
   const onChangeInternal = useCallback(
-    (event: DateTimePickerEvent, date: Date | undefined) => {
+    (date: Date) => {
       setShow(false)
-      if (date) {
-        props.onChange(date)
-      }
+      props.onChange(date)
     },
     [setShow, props],
   )
@@ -55,6 +45,10 @@ export function DateInput(props: Props) {
   const onPress = useCallback(() => {
     setShow(true)
   }, [setShow])
+
+  const onCancel = useCallback(() => {
+    setShow(false)
+  }, [])
 
   return (
     <View>
@@ -74,21 +68,25 @@ export function DateInput(props: Props) {
             <Text
               type={props.buttonLabelType}
               style={[pal.text, props.buttonLabelStyle]}>
-              {formatter.format(props.value)}
+              {i18n.date(props.value, {
+                timeZone: props.handleAsUTC ? 'UTC' : undefined,
+              })}
             </Text>
           </View>
         </Button>
       )}
       {(isIOS || show) && (
-        <DateTimePicker
-          testID={props.testID ? `${props.testID}-datepicker` : undefined}
+        <DatePicker
+          timeZoneOffsetInMinutes={0}
+          modal={isAndroid}
+          open={isAndroid}
+          theme={theme.colorScheme}
+          date={props.value}
+          onDateChange={onChangeInternal}
+          onConfirm={onChangeInternal}
+          onCancel={onCancel}
           mode="date"
-          timeZoneName={props.handleAsUTC ? 'Etc/UTC' : undefined}
-          display="spinner"
-          // @ts-ignore applies in iOS only -prf
-          themeVariant={theme.colorScheme}
-          value={props.value}
-          onChange={onChangeInternal}
+          testID={props.testID ? `${props.testID}-datepicker` : undefined}
           accessibilityLabel={props.accessibilityLabel}
           accessibilityHint={props.accessibilityHint}
           accessibilityLabelledBy={props.accessibilityLabelledBy}

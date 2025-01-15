@@ -1,27 +1,22 @@
-import React from 'react'
-import {
-  ActivityIndicator,
-  Dimensions,
-  StyleProp,
-  View,
-  ViewStyle,
-} from 'react-native'
+import React, {useCallback} from 'react'
+import {Dimensions, StyleProp, View, ViewStyle} from 'react-native'
 import {AppBskyActorDefs, AppBskyGraphDefs} from '@atproto/api'
-import {List, ListRef} from '../util/List'
-import {ProfileCardFeedLoadingPlaceholder} from '../util/LoadingPlaceholder'
-import {ErrorMessage} from '../util/error/ErrorMessage'
-import {LoadMoreRetryBtn} from '../util/LoadMoreRetryBtn'
-import {ProfileCard} from '../profile/ProfileCard'
-import {Button} from '../util/forms/Button'
-import {useAnalytics} from 'lib/analytics/analytics'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {useListMembersQuery} from '#/state/queries/list-members'
+import {msg} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
+
+import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
+import {cleanError} from '#/lib/strings/errors'
 import {logger} from '#/logger'
 import {useModalControls} from '#/state/modals'
+import {useListMembersQuery} from '#/state/queries/list-members'
 import {useSession} from '#/state/session'
-import {cleanError} from '#/lib/strings/errors'
-import {useLingui} from '@lingui/react'
-import {msg} from '@lingui/macro'
+import {ListFooter} from '#/components/Lists'
+import {ProfileCard} from '../profile/ProfileCard'
+import {ErrorMessage} from '../util/error/ErrorMessage'
+import {Button} from '../util/forms/Button'
+import {List, ListRef} from '../util/List'
+import {ProfileCardFeedLoadingPlaceholder} from '../util/LoadingPlaceholder'
+import {LoadMoreRetryBtn} from '../util/LoadMoreRetryBtn'
 
 const LOADING_ITEM = {_reactKey: '__loading__'}
 const EMPTY_ITEM = {_reactKey: '__empty__'}
@@ -51,7 +46,6 @@ export function ListMembers({
   headerOffset?: number
   desktopFixedHeightOffset?: number
 }) {
-  const {track} = useAnalytics()
   const {_} = useLingui()
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const {isMobile} = useWebMediaQueries()
@@ -67,6 +61,7 @@ export function ListMembers({
     refetch,
     fetchNextPage,
     hasNextPage,
+    isFetchingNextPage,
   } = useListMembersQuery(list)
   const isEmpty = !isFetching && !data?.pages[0].items.length
   const isOwner =
@@ -98,7 +93,6 @@ export function ListMembers({
   // =
 
   const onRefresh = React.useCallback(async () => {
-    track('Lists:onRefresh')
     setIsRefreshing(true)
     try {
       await refetch()
@@ -106,17 +100,16 @@ export function ListMembers({
       logger.error('Failed to refresh lists', {message: err})
     }
     setIsRefreshing(false)
-  }, [refetch, track, setIsRefreshing])
+  }, [refetch, setIsRefreshing])
 
   const onEndReached = React.useCallback(async () => {
     if (isFetching || !hasNextPage || isError) return
-    track('Lists:onEndReached')
     try {
       await fetchNextPage()
     } catch (err) {
       logger.error('Failed to load more lists', {message: err})
     }
-  }, [isFetching, hasNextPage, isError, fetchNextPage, track])
+  }, [isFetching, hasNextPage, isError, fetchNextPage])
 
   const onPressRetryLoadMore = React.useCallback(() => {
     fetchNextPage()
@@ -200,14 +193,17 @@ export function ListMembers({
     ],
   )
 
-  const Footer = React.useCallback(
-    () => (
-      <View style={{paddingTop: 20, paddingBottom: 400}}>
-        {isFetching && <ActivityIndicator />}
-      </View>
-    ),
-    [isFetching],
-  )
+  const renderFooter = useCallback(() => {
+    if (isEmpty) return null
+    return (
+      <ListFooter
+        hasNextPage={hasNextPage}
+        error={cleanError(error)}
+        isFetchingNextPage={isFetchingNextPage}
+        onRetry={fetchNextPage}
+      />
+    )
+  }, [hasNextPage, error, isFetchingNextPage, fetchNextPage, isEmpty])
 
   return (
     <View testID={testID} style={style}>
@@ -217,8 +213,8 @@ export function ListMembers({
         data={items}
         keyExtractor={(item: any) => item.subject?.did || item._reactKey}
         renderItem={renderItem}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={Footer}
+        ListHeaderComponent={!isEmpty ? renderHeader : undefined}
+        ListFooterComponent={renderFooter}
         refreshing={isRefreshing}
         onRefresh={onRefresh}
         headerOffset={headerOffset}

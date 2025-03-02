@@ -1,29 +1,25 @@
 import React, {useCallback, useEffect} from 'react'
 import {
-  View,
-  StyleSheet,
-  Image as RNImage,
   AccessibilityInfo,
+  Image as RNImage,
+  StyleSheet,
   useColorScheme,
+  View,
 } from 'react-native'
-import * as SplashScreen from 'expo-splash-screen'
-import {Image} from 'expo-image'
 import Animated, {
+  Easing,
   interpolate,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  Easing,
 } from 'react-native-reanimated'
-import MaskedView from '@react-native-masked-view/masked-view'
 import {useSafeAreaInsets} from 'react-native-safe-area-context'
 import Svg, {Path, SvgProps} from 'react-native-svg'
+import {Image} from 'expo-image'
+import * as SplashScreen from 'expo-splash-screen'
 
-import {isAndroid} from '#/platform/detection'
-import {useThemePrefs} from 'state/shell'
 import {Logotype} from '#/view/icons/Logotype'
-
 // @ts-ignore
 import splashImagePointer from '../assets/splash.png'
 // @ts-ignore
@@ -55,9 +51,8 @@ type Props = {
   isReady: boolean
 }
 
-const AnimatedLogo = Animated.createAnimatedComponent(Logo)
-
 export function Splash(props: React.PropsWithChildren<Props>) {
+  'use no memo'
   const insets = useSafeAreaInsets()
   const intro = useSharedValue(0)
   const outroLogo = useSharedValue(0)
@@ -75,49 +70,47 @@ export function Splash(props: React.PropsWithChildren<Props>) {
     isLayoutReady &&
     reduceMotion !== undefined
 
-  const {colorMode} = useThemePrefs()
   const colorScheme = useColorScheme()
-  const themeName = colorMode === 'system' ? colorScheme : colorMode
-  const isDarkMode = themeName === 'dark'
+  const isDarkMode = colorScheme === 'dark'
 
   const logoAnimation = useAnimatedStyle(() => {
     return {
       transform: [
         {
-          scale: interpolate(intro.value, [0, 1], [0.8, 1], 'clamp'),
+          scale: interpolate(intro.get(), [0, 1], [0.8, 1], 'clamp'),
         },
         {
           scale: interpolate(
-            outroLogo.value,
+            outroLogo.get(),
             [0, 0.08, 1],
             [1, 0.8, 500],
             'clamp',
           ),
         },
       ],
-      opacity: interpolate(intro.value, [0, 1], [0, 1], 'clamp'),
+      opacity: interpolate(intro.get(), [0, 1], [0, 1], 'clamp'),
     }
   })
   const bottomLogoAnimation = useAnimatedStyle(() => {
     return {
-      opacity: interpolate(intro.value, [0, 1], [0, 1], 'clamp'),
+      opacity: interpolate(intro.get(), [0, 1], [0, 1], 'clamp'),
     }
   })
   const reducedLogoAnimation = useAnimatedStyle(() => {
     return {
       transform: [
         {
-          scale: interpolate(intro.value, [0, 1], [0.8, 1], 'clamp'),
+          scale: interpolate(intro.get(), [0, 1], [0.8, 1], 'clamp'),
         },
       ],
-      opacity: interpolate(intro.value, [0, 1], [0, 1], 'clamp'),
+      opacity: interpolate(intro.get(), [0, 1], [0, 1], 'clamp'),
     }
   })
 
   const logoWrapperAnimation = useAnimatedStyle(() => {
     return {
       opacity: interpolate(
-        outroAppOpacity.value,
+        outroAppOpacity.get(),
         [0, 0.1, 0.2, 1],
         [1, 1, 0, 0],
         'clamp',
@@ -129,11 +122,11 @@ export function Splash(props: React.PropsWithChildren<Props>) {
     return {
       transform: [
         {
-          scale: interpolate(outroApp.value, [0, 1], [1.1, 1], 'clamp'),
+          scale: interpolate(outroApp.get(), [0, 1], [1.1, 1], 'clamp'),
         },
       ],
       opacity: interpolate(
-        outroAppOpacity.value,
+        outroAppOpacity.get(),
         [0, 0.1, 0.2, 1],
         [0, 0, 1, 1],
         'clamp',
@@ -149,29 +142,35 @@ export function Splash(props: React.PropsWithChildren<Props>) {
     if (isReady) {
       SplashScreen.hideAsync()
         .then(() => {
-          intro.value = withTiming(
-            1,
-            {duration: 400, easing: Easing.out(Easing.cubic)},
-            async () => {
-              // set these values to check animation at specific point
-              // outroLogo.value = 0.1
-              // outroApp.value = 0.1
-              outroLogo.value = withTiming(
-                1,
-                {duration: 1200, easing: Easing.in(Easing.cubic)},
-                () => {
-                  runOnJS(onFinish)()
-                },
-              )
-              outroApp.value = withTiming(1, {
-                duration: 1200,
-                easing: Easing.inOut(Easing.cubic),
-              })
-              outroAppOpacity.value = withTiming(1, {
-                duration: 1200,
-                easing: Easing.in(Easing.cubic),
-              })
-            },
+          intro.set(() =>
+            withTiming(
+              1,
+              {duration: 400, easing: Easing.out(Easing.cubic)},
+              async () => {
+                // set these values to check animation at specific point
+                outroLogo.set(() =>
+                  withTiming(
+                    1,
+                    {duration: 1200, easing: Easing.in(Easing.cubic)},
+                    () => {
+                      runOnJS(onFinish)()
+                    },
+                  ),
+                )
+                outroApp.set(() =>
+                  withTiming(1, {
+                    duration: 1200,
+                    easing: Easing.inOut(Easing.cubic),
+                  }),
+                )
+                outroAppOpacity.set(() =>
+                  withTiming(1, {
+                    duration: 1200,
+                    easing: Easing.in(Easing.cubic),
+                  }),
+                )
+              },
+            ),
           )
         })
         .catch(() => {})
@@ -184,6 +183,8 @@ export function Splash(props: React.PropsWithChildren<Props>) {
 
   const logoAnimations =
     reduceMotion === true ? reducedLogoAnimation : logoAnimation
+  // special off-spec color for dark mode
+  const logoBg = isDarkMode ? '#0F1824' : '#fff'
 
   return (
     <View style={{flex: 1}} onLayout={onLayout}>
@@ -214,64 +215,31 @@ export function Splash(props: React.PropsWithChildren<Props>) {
         </View>
       )}
 
-      {isReady &&
-        (isAndroid || reduceMotion === true ? (
-          // Use a simple fade on older versions of android (work around a bug)
-          <>
-            <Animated.View style={[{flex: 1}, appAnimation]}>
-              {props.children}
-            </Animated.View>
+      {isReady && (
+        <>
+          <Animated.View style={[{flex: 1}, appAnimation]}>
+            {props.children}
+          </Animated.View>
 
-            {!isAnimationComplete && (
-              <Animated.View
-                style={[
-                  StyleSheet.absoluteFillObject,
-                  logoWrapperAnimation,
-                  {
-                    flex: 1,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    transform: [{translateY: -(insets.top / 2)}, {scale: 0.1}], // scale from 1000px to 100px
-                  },
-                ]}>
-                <AnimatedLogo
-                  fill="#fff"
-                  style={[{opacity: 0}, logoAnimations]}
-                />
+          {!isAnimationComplete && (
+            <Animated.View
+              style={[
+                StyleSheet.absoluteFillObject,
+                logoWrapperAnimation,
+                {
+                  flex: 1,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  transform: [{translateY: -(insets.top / 2)}, {scale: 0.1}], // scale from 1000px to 100px
+                },
+              ]}>
+              <Animated.View style={[logoAnimations]}>
+                <Logo fill={logoBg} />
               </Animated.View>
-            )}
-          </>
-        ) : (
-          <MaskedView
-            style={[StyleSheet.absoluteFillObject]}
-            maskElement={
-              <Animated.View
-                style={[
-                  {
-                    // Transparent background because mask is based off alpha channel.
-                    backgroundColor: 'transparent',
-                    flex: 1,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    transform: [{translateY: -(insets.top / 2)}, {scale: 0.1}], // scale from 1000px to 100px
-                  },
-                ]}>
-                <AnimatedLogo fill="#fff" style={[logoAnimations]} />
-              </Animated.View>
-            }>
-            {!isAnimationComplete && (
-              <View
-                style={[
-                  StyleSheet.absoluteFillObject,
-                  {backgroundColor: '#fff'},
-                ]}
-              />
-            )}
-            <Animated.View style={[{flex: 1}, appAnimation]}>
-              {props.children}
             </Animated.View>
-          </MaskedView>
-        ))}
+          )}
+        </>
+      )}
     </View>
   )
 }

@@ -1,9 +1,9 @@
 /* global jest */
-import {configure} from '@testing-library/react-native'
 import 'react-native-gesture-handler/jestSetup'
-
 // IMPORTANT: this is what's used in the native runtime
 import 'react-native-url-polyfill/auto'
+
+import {configure} from '@testing-library/react-native'
 
 configure({asyncUtilTimeout: 20000})
 
@@ -17,9 +17,6 @@ jest.mock('react-native/Libraries/EventEmitter/NativeEventEmitter', () => {
     default: EventEmitter,
   }
 })
-
-// Silence the warning: Animated: `useNativeDriver` is not supported
-jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper')
 
 jest.mock('@fortawesome/react-native-fontawesome', () => ({
   FontAwesomeIcon: '',
@@ -42,23 +39,18 @@ jest.mock('rn-fetch-blob', () => ({
   fetch: jest.fn(),
 }))
 
-jest.mock('@bam.tech/react-native-image-resizer', () => ({
-  createResizedImage: jest.fn(),
+jest.mock('expo-file-system', () => ({
+  getInfoAsync: jest.fn().mockResolvedValue({exists: true, size: 100}),
+  deleteAsync: jest.fn(),
 }))
 
-jest.mock('@segment/analytics-react-native', () => ({
-  createClient: () => ({
-    add: jest.fn(),
+jest.mock('expo-image-manipulator', () => ({
+  manipulateAsync: jest.fn().mockResolvedValue({
+    uri: 'file://resized-image',
   }),
-  useAnalytics: () => ({
-    track: jest.fn(),
-    identify: jest.fn(),
-    reset: jest.fn(),
-    group: jest.fn(),
-    screen: jest.fn(),
-    alias: jest.fn(),
-    flush: jest.fn(),
-  }),
+  SaveFormat: {
+    JPEG: 'jpeg',
+  },
 }))
 
 jest.mock('expo-camera', () => ({
@@ -88,3 +80,44 @@ jest.mock('sentry-expo', () => ({
     ReactNavigationInstrumentation: jest.fn(),
   },
 }))
+
+jest.mock('crypto', () => ({}))
+
+jest.mock('expo-application', () => ({
+  nativeApplicationVersion: '1.0.0',
+  nativeBuildVersion: '1',
+}))
+
+jest.mock('expo-modules-core', () => ({
+  requireNativeModule: jest.fn().mockImplementation(moduleName => {
+    if (moduleName === 'ExpoPlatformInfo') {
+      return {
+        getIsReducedMotionEnabled: () => false,
+      }
+    }
+    if (moduleName === 'BottomSheet') {
+      return {
+        dismissAll: () => {},
+      }
+    }
+  }),
+  requireNativeViewManager: jest.fn().mockImplementation(moduleName => {
+    return () => null
+  }),
+}))
+
+jest.mock('expo-localization', () => ({
+  getLocales: () => [],
+}))
+
+jest.mock('statsig-react-native-expo', () => ({
+  Statsig: {
+    initialize() {},
+    initializeCalled() {
+      return false
+    },
+  },
+}))
+
+jest.mock('../src/logger/bitdrift/lib', () => ({}))
+jest.mock('../src/lib/statsig/statsig', () => ({}))

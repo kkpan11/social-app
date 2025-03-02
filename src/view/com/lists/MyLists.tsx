@@ -4,22 +4,25 @@ import {
   FlatList as RNFlatList,
   RefreshControl,
   StyleProp,
-  StyleSheet,
   View,
   ViewStyle,
 } from 'react-native'
 import {AppBskyGraphDefs as GraphDefs} from '@atproto/api'
-import {ListCard} from './ListCard'
-import {MyListsFilter, useMyListsQuery} from '#/state/queries/my-lists'
-import {ErrorMessage} from '../util/error/ErrorMessage'
-import {Text} from '../util/text/Text'
-import {useAnalytics} from 'lib/analytics/analytics'
-import {usePalette} from 'lib/hooks/usePalette'
-import {List} from '../util/List'
-import {s} from 'lib/styles'
-import {logger} from '#/logger'
-import {Trans} from '@lingui/macro'
+import {msg} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
+
+import {usePalette} from '#/lib/hooks/usePalette'
 import {cleanError} from '#/lib/strings/errors'
+import {s} from '#/lib/styles'
+import {logger} from '#/logger'
+import {useModerationOpts} from '#/state/preferences/moderation-opts'
+import {MyListsFilter, useMyListsQuery} from '#/state/queries/my-lists'
+import {atoms as a, useTheme} from '#/alf'
+import {BulletList_Stroke2_Corner0_Rounded as ListIcon} from '#/components/icons/BulletList'
+import * as ListCard from '#/components/ListCard'
+import {Text} from '#/components/Typography'
+import {ErrorMessage} from '../util/error/ErrorMessage'
+import {List} from '../util/List'
 
 const LOADING = {_reactKey: '__loading__'}
 const EMPTY = {_reactKey: '__empty__'}
@@ -39,7 +42,9 @@ export function MyLists({
   testID?: string
 }) {
   const pal = usePalette('default')
-  const {track} = useAnalytics()
+  const t = useTheme()
+  const {_} = useLingui()
+  const moderationOpts = useModerationOpts()
   const [isPTRing, setIsPTRing] = React.useState(false)
   const {data, isFetching, isFetched, isError, error, refetch} =
     useMyListsQuery(filter)
@@ -50,7 +55,7 @@ export function MyLists({
     if (isError && isEmpty) {
       items = items.concat([ERROR_ITEM])
     }
-    if (!isFetched && isFetching) {
+    if ((!isFetched && isFetching) || !moderationOpts) {
       items = items.concat([LOADING])
     } else if (isEmpty) {
       items = items.concat([EMPTY])
@@ -58,13 +63,29 @@ export function MyLists({
       items = items.concat(data)
     }
     return items
-  }, [isError, isEmpty, isFetched, isFetching, data])
+  }, [isError, isEmpty, isFetched, isFetching, moderationOpts, data])
+
+  let emptyText
+  switch (filter) {
+    case 'curate':
+      emptyText = _(
+        msg`Public, sharable lists which can be used to drive feeds.`,
+      )
+      break
+    case 'mod':
+      emptyText = _(
+        msg`Public, sharable lists of users to mute or block in bulk.`,
+      )
+      break
+    default:
+      emptyText = _(msg`You have no lists.`)
+      break
+  }
 
   // events
   // =
 
   const onRefresh = React.useCallback(async () => {
-    track('Lists:onRefresh')
     setIsPTRing(true)
     try {
       await refetch()
@@ -72,7 +93,7 @@ export function MyLists({
       logger.error('Failed to refresh lists', {message: err})
     }
     setIsPTRing(false)
-  }, [refetch, track, setIsPTRing])
+  }, [refetch, setIsPTRing])
 
   // rendering
   // =
@@ -81,26 +102,45 @@ export function MyLists({
     ({item, index}: {item: any; index: number}) => {
       if (item === EMPTY) {
         return (
-          <View
-            key={item._reactKey}
-            testID="listsEmpty"
-            style={[{padding: 18, borderTopWidth: 1}, pal.border]}>
-            <Text style={pal.textLight}>
-              <Trans>You have no lists.</Trans>
+          <View style={[a.flex_1, a.align_center, a.gap_sm, a.px_xl, a.pt_xl]}>
+            <View
+              style={[
+                a.align_center,
+                a.justify_center,
+                a.rounded_full,
+                t.atoms.bg_contrast_25,
+                {
+                  width: 32,
+                  height: 32,
+                },
+              ]}>
+              <ListIcon size="md" fill={t.atoms.text_contrast_low.color} />
+            </View>
+            <Text
+              style={[
+                a.text_center,
+                a.flex_1,
+                a.text_sm,
+                a.leading_snug,
+                t.atoms.text_contrast_medium,
+                {
+                  maxWidth: 200,
+                },
+              ]}>
+              {emptyText}
             </Text>
           </View>
         )
       } else if (item === ERROR_ITEM) {
         return (
           <ErrorMessage
-            key={item._reactKey}
             message={cleanError(error)}
             onPressTryAgain={onRefresh}
           />
         )
       } else if (item === LOADING) {
         return (
-          <View key={item._reactKey} style={{padding: 20}}>
+          <View style={{padding: 20}}>
             <ActivityIndicator />
           </View>
         )
@@ -108,15 +148,18 @@ export function MyLists({
       return renderItem ? (
         renderItem(item, index)
       ) : (
-        <ListCard
-          key={item.uri}
-          list={item}
-          testID={`list-${item.name}`}
-          style={styles.item}
-        />
+        <View
+          style={[
+            index !== 0 && a.border_t,
+            t.atoms.border_contrast_low,
+            a.px_lg,
+            a.py_lg,
+          ]}>
+          <ListCard.Default view={item} />
+        </View>
       )
     },
-    [error, onRefresh, renderItem, pal],
+    [t, renderItem, error, onRefresh, emptyText],
   )
 
   if (inline) {
@@ -138,8 +181,6 @@ export function MyLists({
             }
             contentContainerStyle={[s.contentContainer]}
             removeClippedSubviews={true}
-            // @ts-ignore our .web version only -prf
-            desktopFixedHeight
           />
         )}
       </View>
@@ -157,18 +198,11 @@ export function MyLists({
             onRefresh={onRefresh}
             contentContainerStyle={[s.contentContainer]}
             removeClippedSubviews={true}
-            // @ts-ignore our .web version only -prf
             desktopFixedHeight
+            sideBorders={false}
           />
         )}
       </View>
     )
   }
 }
-
-const styles = StyleSheet.create({
-  item: {
-    paddingHorizontal: 18,
-    paddingVertical: 4,
-  },
-})

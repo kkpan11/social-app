@@ -2,6 +2,7 @@ import React, {PropsWithChildren, useMemo, useRef} from 'react'
 import {
   Dimensions,
   GestureResponderEvent,
+  Insets,
   StyleProp,
   StyleSheet,
   TouchableOpacity,
@@ -10,18 +11,22 @@ import {
   View,
   ViewStyle,
 } from 'react-native'
-import {IconProp} from '@fortawesome/fontawesome-svg-core'
+import Animated, {FadeIn, FadeInDown, FadeInUp} from 'react-native-reanimated'
 import RootSiblings from 'react-native-root-siblings'
+import {IconProp} from '@fortawesome/fontawesome-svg-core'
 import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome'
+import {msg} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
+
+import {HITSLOP_10} from '#/lib/constants'
+import {usePalette} from '#/lib/hooks/usePalette'
+import {colors} from '#/lib/styles'
+import {useTheme} from '#/lib/ThemeContext'
+import {isWeb} from '#/platform/detection'
+import {native} from '#/alf'
+import {FullWindowOverlay} from '#/components/FullWindowOverlay'
 import {Text} from '../text/Text'
 import {Button, ButtonType} from './Button'
-import {colors} from 'lib/styles'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useTheme} from 'lib/ThemeContext'
-import {HITSLOP_10} from 'lib/constants'
-import {useLingui} from '@lingui/react'
-import {msg} from '@lingui/macro'
-import {isWeb} from 'platform/detection'
 
 const ESTIMATED_BTN_HEIGHT = 50
 const ESTIMATED_SEP_HEIGHT = 16
@@ -60,6 +65,7 @@ interface DropdownButtonProps {
   openUpwards?: boolean
   rightOffset?: number
   bottomOffset?: number
+  hitSlop?: Insets
   accessibilityLabel?: string
   accessibilityHint?: string
 }
@@ -76,11 +82,12 @@ export function DropdownButton({
   openUpwards = false,
   rightOffset = 0,
   bottomOffset = 0,
+  hitSlop = HITSLOP_10,
   accessibilityLabel,
 }: PropsWithChildren<DropdownButtonProps>) {
   const {_} = useLingui()
 
-  const ref1 = useRef<TouchableOpacity>(null)
+  const ref1 = useRef<View>(null)
   const ref2 = useRef<View>(null)
 
   const onPress = (e: GestureResponderEvent) => {
@@ -124,6 +131,7 @@ export function DropdownButton({
           pageY,
           menuWidth,
           items.filter(v => !!v) as DropdownItem[],
+          openUpwards,
         )
       },
     )
@@ -147,7 +155,7 @@ export function DropdownButton({
         testID={testID}
         style={style}
         onPress={onPress}
-        hitSlop={HITSLOP_10}
+        hitSlop={hitSlop}
         ref={ref1}
         accessibilityRole="button"
         accessibilityLabel={
@@ -178,6 +186,7 @@ function createDropdownMenu(
   pageY: number,
   width: number,
   items: DropdownItem[],
+  opensUpwards = false,
 ): RootSiblings {
   const onPressItem = (index: number) => {
     sibling.destroy()
@@ -197,6 +206,7 @@ function createDropdownMenu(
         width={width}
         items={items}
         onPressItem={onPressItem}
+        openUpwards={opensUpwards}
       />
     ),
   )
@@ -211,6 +221,7 @@ type DropDownItemProps = {
   width: number
   items: DropdownItem[]
   onPressItem: (index: number) => void
+  openUpwards: boolean
 }
 
 const DropdownItems = ({
@@ -221,6 +232,7 @@ const DropdownItems = ({
   width,
   items,
   onPressItem,
+  openUpwards,
 }: DropDownItemProps) => {
   const pal = usePalette('default')
   const theme = useTheme()
@@ -239,13 +251,14 @@ const DropdownItems = ({
   // - (On mobile) be buttons by default, accept `label` and `nativeID`
   // props, and always have an explicit label
   return (
-    <>
+    <FullWindowOverlay>
       {/* This TouchableWithoutFeedback renders the background so if the user clicks outside, the dropdown closes */}
       <TouchableWithoutFeedback
         onPress={onOuterPress}
         accessibilityLabel={_(msg`Toggle dropdown`)}
         accessibilityHint="">
-        <View
+        <Animated.View
+          entering={FadeIn}
           style={[
             styles.bg,
             // On web we need to adjust the top and bottom relative to the scroll position
@@ -261,7 +274,10 @@ const DropdownItems = ({
           ]}
         />
       </TouchableWithoutFeedback>
-      <View
+      <Animated.View
+        entering={native(
+          openUpwards ? FadeInDown.springify(1000) : FadeInUp.springify(1000),
+        )}
         style={[
           styles.menu,
           {left: x, top: y, width},
@@ -277,7 +293,9 @@ const DropdownItems = ({
                 onPress={() => onPressItem(index)}
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
-                accessibilityHint={_(msg`Option ${index + 1} of ${numItems}`)}>
+                accessibilityHint={_(
+                  msg`Selects option ${index + 1} of ${numItems}`,
+                )}>
                 {item.icon && (
                   <FontAwesomeIcon
                     style={styles.icon}
@@ -303,8 +321,8 @@ const DropdownItems = ({
           }
           return null
         })}
-      </View>
-    </>
+      </Animated.View>
+    </FullWindowOverlay>
   )
 }
 
@@ -323,14 +341,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     width: '100%',
-    backgroundColor: '#000',
-    opacity: 0.1,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
   },
   menu: {
     position: 'absolute',
     backgroundColor: '#fff',
     borderRadius: 14,
-    opacity: 1,
     paddingVertical: 6,
   },
   menuItem: {
@@ -371,6 +387,6 @@ const styles = StyleSheet.create({
   },
   headingLabel: {
     fontSize: 18,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 })

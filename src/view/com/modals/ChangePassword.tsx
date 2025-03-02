@@ -1,4 +1,4 @@
-import React, {useState} from 'react'
+import {useState} from 'react'
 import {
   ActivityIndicator,
   SafeAreaView,
@@ -6,24 +6,25 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import {ScrollView} from './util'
 import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome'
-import {TextInput} from './util'
-import {Text} from '../util/text/Text'
-import {Button} from '../util/forms/Button'
-import {ErrorMessage} from '../util/error/ErrorMessage'
-import {s, colors} from 'lib/styles'
-import {usePalette} from 'lib/hooks/usePalette'
-import {isAndroid, isWeb} from 'platform/detection'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {cleanError, isNetworkError} from 'lib/strings/errors'
-import {checkAndFormatResetCode} from 'lib/strings/password'
-import {Trans, msg} from '@lingui/macro'
+import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
-import {useModalControls} from '#/state/modals'
-import {useSession, getAgent} from '#/state/session'
 import * as EmailValidator from 'email-validator'
+
+import {usePalette} from '#/lib/hooks/usePalette'
+import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
+import {cleanError, isNetworkError} from '#/lib/strings/errors'
+import {checkAndFormatResetCode} from '#/lib/strings/password'
+import {colors, s} from '#/lib/styles'
 import {logger} from '#/logger'
+import {isAndroid, isWeb} from '#/platform/detection'
+import {useModalControls} from '#/state/modals'
+import {useAgent, useSession} from '#/state/session'
+import {ErrorMessage} from '../util/error/ErrorMessage'
+import {Button} from '../util/forms/Button'
+import {Text} from '../util/text/Text'
+import {ScrollView} from './util'
+import {TextInput} from './util'
 
 enum Stages {
   RequestCode,
@@ -36,6 +37,7 @@ export const snapPoints = isAndroid ? ['90%'] : ['45%']
 export function Component() {
   const pal = usePalette('default')
   const {currentAccount} = useSession()
+  const agent = useAgent()
   const {_} = useLingui()
   const [stage, setStage] = useState<Stages>(Stages.RequestCode)
   const [isProcessing, setIsProcessing] = useState<boolean>(false)
@@ -44,7 +46,6 @@ export function Component() {
   const [error, setError] = useState<string>('')
   const {isMobile} = useWebMediaQueries()
   const {closeModal} = useModalControls()
-  const agent = getAgent()
 
   const onRequestCode = async () => {
     if (
@@ -80,13 +81,22 @@ export function Component() {
 
   const onChangePassword = async () => {
     const formattedCode = checkAndFormatResetCode(resetCode)
-    // TODO Better password strength check
-    if (!formattedCode || !newPassword) {
+    if (!formattedCode) {
       setError(
         _(
           msg`You have entered an invalid code. It should look like XXXXX-XXXXX.`,
         ),
       )
+      return
+    }
+    if (!newPassword) {
+      setError(
+        _(msg`Please enter a password. It must be at least 8 characters long.`),
+      )
+      return
+    }
+    if (newPassword.length < 8) {
+      setError(_(msg`Password must be at least 8 characters long.`))
       return
     }
 
@@ -103,7 +113,9 @@ export function Component() {
       logger.warn('Failed to set new password', {error: e})
       if (isNetworkError(e)) {
         setError(
-          'Unable to contact your service. Please check your Internet connection.',
+          _(
+            msg`Unable to contact your service. Please check your Internet connection.`,
+          ),
         )
       } else {
         setError(cleanError(errMsg))
@@ -137,7 +149,9 @@ export function Component() {
         <View>
           <View style={styles.titleSection}>
             <Text type="title-lg" style={[pal.text, styles.title]}>
-              {stage !== Stages.Done ? 'Change Password' : 'Password Changed'}
+              {stage !== Stages.Done
+                ? _(msg`Change Password`)
+                : _(msg`Password Changed`)}
             </Text>
           </View>
 
@@ -180,7 +194,7 @@ export function Component() {
                 <TextInput
                   testID="codeInput"
                   style={[pal.text, styles.textInput]}
-                  placeholder="Reset code"
+                  placeholder={_(msg`Reset code`)}
                   placeholderTextColor={pal.colors.textLight}
                   value={resetCode}
                   onChangeText={setResetCode}
@@ -207,7 +221,7 @@ export function Component() {
                 <TextInput
                   testID="codeInput"
                   style={[pal.text, styles.textInput]}
-                  placeholder="New password"
+                  placeholder={_(msg`New password`)}
                   placeholderTextColor={pal.colors.textLight}
                   onChangeText={setNewPassword}
                   secureTextEntry

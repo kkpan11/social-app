@@ -1,19 +1,58 @@
-export function pluralize(n: number, base: string, plural?: string): string {
-  if (n === 1) {
-    return base
-  }
-  if (plural) {
-    return plural
-  }
-  return base + 's'
-}
+import {useCallback, useMemo} from 'react'
+import Graphemer from 'graphemer'
 
-export function enforceLen(str: string, len: number, ellipsis = false): string {
+export function enforceLen(
+  str: string,
+  len: number,
+  ellipsis = false,
+  mode: 'end' | 'middle' = 'end',
+): string {
   str = str || ''
   if (str.length > len) {
-    return str.slice(0, len) + (ellipsis ? '...' : '')
+    if (ellipsis) {
+      if (mode === 'end') {
+        return str.slice(0, len) + '…'
+      } else if (mode === 'middle') {
+        const half = Math.floor(len / 2)
+        return str.slice(0, half) + '…' + str.slice(-half)
+      } else {
+        // fallback
+        return str.slice(0, len)
+      }
+    } else {
+      return str.slice(0, len)
+    }
   }
   return str
+}
+
+export function useEnforceMaxGraphemeCount() {
+  const splitter = useMemo(() => new Graphemer(), [])
+
+  return useCallback(
+    (text: string, maxCount: number) => {
+      if (splitter.countGraphemes(text) > maxCount) {
+        return splitter.splitGraphemes(text).slice(0, maxCount).join('')
+      } else {
+        return text
+      }
+    },
+    [splitter],
+  )
+}
+
+export function useWarnMaxGraphemeCount({
+  text,
+  maxCount,
+}: {
+  text: string
+  maxCount: number
+}) {
+  const splitter = useMemo(() => new Graphemer(), [])
+
+  return useMemo(() => {
+    return splitter.countGraphemes(text) > maxCount
+  }, [splitter, maxCount, text])
 }
 
 // https://stackoverflow.com/a/52171480

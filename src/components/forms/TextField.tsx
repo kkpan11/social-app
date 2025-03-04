@@ -1,21 +1,29 @@
 import React from 'react'
 import {
-  View,
+  AccessibilityProps,
+  StyleSheet,
   TextInput,
   TextInputProps,
   TextStyle,
+  View,
   ViewStyle,
-  Pressable,
-  StyleSheet,
-  AccessibilityProps,
 } from 'react-native'
 
-import {HITSLOP_20} from 'lib/constants'
-import {isWeb} from '#/platform/detection'
-import {useTheme, atoms as a, web, tokens, android} from '#/alf'
-import {Text} from '#/components/Typography'
+import {HITSLOP_20} from '#/lib/constants'
+import {mergeRefs} from '#/lib/merge-refs'
+import {
+  android,
+  applyFonts,
+  atoms as a,
+  ios,
+  TextStyleProp,
+  useAlf,
+  useTheme,
+  web,
+} from '#/alf'
 import {useInteractionState} from '#/components/hooks/useInteractionState'
 import {Props as SVGIconProps} from '#/components/icons/common'
+import {Text} from '#/components/Typography'
 
 const Context = React.createContext<{
   inputRef: React.RefObject<TextInput> | null
@@ -41,7 +49,6 @@ export type RootProps = React.PropsWithChildren<{isInvalid?: boolean}>
 
 export function Root({children, isInvalid = false}: RootProps) {
   const inputRef = React.useRef<TextInput>(null)
-  const rootRef = React.useRef<View>(null)
   const {
     state: hovered,
     onIn: onHoverIn,
@@ -72,35 +79,17 @@ export function Root({children, isInvalid = false}: RootProps) {
     ],
   )
 
-  React.useLayoutEffect(() => {
-    const root = rootRef.current
-    if (!root || !isWeb) return
-    // @ts-ignore web only
-    root.tabIndex = -1
-  }, [])
-
   return (
     <Context.Provider value={context}>
-      <Pressable
-        accessibilityRole="button"
-        ref={rootRef}
-        role="none"
-        style={[
-          a.flex_row,
-          a.align_center,
-          a.relative,
-          a.w_full,
-          a.px_md,
-          {
-            paddingVertical: 14,
-          },
-        ]}
-        // onPressIn/out don't work on android web
-        onPress={() => inputRef.current?.focus()}
-        onHoverIn={onHoverIn}
-        onHoverOut={onHoverOut}>
+      <View
+        style={[a.flex_row, a.align_center, a.relative, a.w_full, a.px_md]}
+        {...web({
+          onClick: () => inputRef.current?.focus(),
+          onMouseOver: onHoverIn,
+          onMouseOut: onHoverOut,
+        })}>
         {children}
-      </Pressable>
+      </View>
     </Context.Provider>
   )
 }
@@ -121,17 +110,14 @@ export function useSharedInputStyles() {
     ]
     const error: ViewStyle[] = [
       {
-        backgroundColor:
-          t.name === 'light' ? t.palette.negative_25 : t.palette.negative_900,
-        borderColor:
-          t.name === 'light' ? t.palette.negative_300 : t.palette.negative_800,
+        backgroundColor: t.palette.negative_25,
+        borderColor: t.palette.negative_300,
       },
     ]
     const errorHover: ViewStyle[] = [
       {
-        backgroundColor:
-          t.name === 'light' ? t.palette.negative_25 : t.palette.negative_900,
-        borderColor: tokens.color.red_500,
+        backgroundColor: t.palette.negative_25,
+        borderColor: t.palette.negative_500,
       },
     ]
 
@@ -146,9 +132,15 @@ export function useSharedInputStyles() {
 
 export type InputProps = Omit<TextInputProps, 'value' | 'onChangeText'> & {
   label: string
-  value: string
-  onChangeText: (value: string) => void
+  /**
+   * @deprecated Controlled inputs are *strongly* discouraged. Use `defaultValue` instead where possible.
+   *
+   * See https://github.com/facebook/react-native-website/pull/4247
+   */
+  value?: string
+  onChangeText?: (value: string) => void
   isInvalid?: boolean
+  inputRef?: React.RefObject<TextInput> | React.ForwardedRef<TextInput>
 }
 
 export function createInput(Component: typeof TextInput) {
@@ -157,10 +149,15 @@ export function createInput(Component: typeof TextInput) {
     placeholder,
     value,
     onChangeText,
+    onFocus,
+    onBlur,
     isInvalid,
+    inputRef,
+    style,
     ...rest
   }: InputProps) {
     const t = useTheme()
+    const {fonts} = useAlf()
     const ctx = React.useContext(Context)
     const withinRoot = Boolean(ctx.inputRef)
 
@@ -182,37 +179,68 @@ export function createInput(Component: typeof TextInput) {
       )
     }
 
+    const refs = mergeRefs([ctx.inputRef, inputRef!].filter(Boolean))
+
+    const flattened = StyleSheet.flatten([
+      a.relative,
+      a.z_20,
+      a.flex_1,
+      a.text_md,
+      t.atoms.text,
+      a.px_xs,
+      {
+        // paddingVertical doesn't work w/multiline - esb
+        lineHeight: a.text_md.fontSize * 1.1875,
+        textAlignVertical: rest.multiline ? 'top' : undefined,
+        minHeight: rest.multiline ? 80 : undefined,
+        minWidth: 0,
+      },
+      ios({paddingTop: 12, paddingBottom: 13}),
+      android(a.py_sm),
+      // fix for autofill styles covering border
+      web({
+        paddingTop: 10,
+        paddingBottom: 11,
+        marginTop: 2,
+        marginBottom: 2,
+      }),
+      style,
+    ])
+
+    applyFonts(flattened, fonts.family)
+
+    // should always be defined on `typography`
+    // @ts-ignore
+    if (flattened.fontSize) {
+      // @ts-ignore
+      flattened.fontSize = Math.round(
+        // @ts-ignore
+        flattened.fontSize * fonts.scaleMultiplier,
+      )
+    }
+
     return (
       <>
         <Component
           accessibilityHint={undefined}
+          hitSlop={HITSLOP_20}
           {...rest}
-          aria-label={label}
           accessibilityLabel={label}
-          ref={ctx.inputRef}
+          ref={refs}
           value={value}
           onChangeText={onChangeText}
-          onFocus={ctx.onFocus}
-          onBlur={ctx.onBlur}
+          onFocus={e => {
+            ctx.onFocus()
+            onFocus?.(e)
+          }}
+          onBlur={e => {
+            ctx.onBlur()
+            onBlur?.(e)
+          }}
           placeholder={placeholder || label}
           placeholderTextColor={t.palette.contrast_500}
-          hitSlop={HITSLOP_20}
-          style={[
-            a.relative,
-            a.z_20,
-            a.flex_1,
-            a.text_md,
-            t.atoms.text,
-            a.px_xs,
-            android({
-              paddingBottom: 2,
-            }),
-            {
-              lineHeight: a.text_md.fontSize * 1.1875,
-              textAlignVertical: rest.multiline ? 'top' : undefined,
-              minHeight: rest.multiline ? 60 : undefined,
-            },
-          ]}
+          keyboardAppearance={t.name === 'light' ? 'light' : 'dark'}
+          style={flattened}
         />
 
         <View
@@ -238,10 +266,14 @@ export function createInput(Component: typeof TextInput) {
 
 export const Input = createInput(TextInput)
 
-export function Label({children}: React.PropsWithChildren<{}>) {
+export function LabelText({
+  nativeID,
+  children,
+}: React.PropsWithChildren<{nativeID?: string}>) {
   const t = useTheme()
   return (
     <Text
+      nativeID={nativeID}
       style={[a.text_sm, a.font_bold, t.atoms.text_contrast_medium, a.mb_sm]}>
       {children}
     </Text>
@@ -286,7 +318,7 @@ export function Icon({icon: Comp}: {icon: React.ComponentType<SVGIconProps>}) {
       <Comp
         size="md"
         style={[
-          {color: t.palette.contrast_500, pointerEvents: 'none'},
+          {color: t.palette.contrast_500, pointerEvents: 'none', flexShrink: 0},
           ctx.hovered ? hover : {},
           ctx.focused ? focus : {},
           ctx.isInvalid && ctx.hovered ? errorHover : {},
@@ -297,37 +329,33 @@ export function Icon({icon: Comp}: {icon: React.ComponentType<SVGIconProps>}) {
   )
 }
 
-export function Suffix({
+export function SuffixText({
   children,
   label,
   accessibilityHint,
-}: React.PropsWithChildren<{
-  label: string
-  accessibilityHint?: AccessibilityProps['accessibilityHint']
-}>) {
+  style,
+}: React.PropsWithChildren<
+  TextStyleProp & {
+    label: string
+    accessibilityHint?: AccessibilityProps['accessibilityHint']
+  }
+>) {
   const t = useTheme()
   const ctx = React.useContext(Context)
   return (
     <Text
-      aria-label={label}
       accessibilityLabel={label}
       accessibilityHint={accessibilityHint}
+      numberOfLines={1}
       style={[
         a.z_20,
         a.pr_sm,
         a.text_md,
         t.atoms.text_contrast_medium,
-        {
-          pointerEvents: 'none',
-        },
-        web({
-          marginTop: -2,
-        }),
-        ctx.hovered || ctx.focused
-          ? {
-              color: t.palette.contrast_800,
-            }
-          : {},
+        a.pointer_events_none,
+        web([{marginTop: -2}, a.leading_snug]),
+        (ctx.hovered || ctx.focused) && {color: t.palette.contrast_800},
+        style,
       ]}>
       {children}
     </Text>

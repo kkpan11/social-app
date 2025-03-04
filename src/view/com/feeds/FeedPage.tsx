@@ -1,64 +1,83 @@
 import React from 'react'
-import {
-  FontAwesomeIcon,
-  FontAwesomeIconStyle,
-} from '@fortawesome/react-native-fontawesome'
-import {useNavigation} from '@react-navigation/native'
-import {useAnalytics} from 'lib/analytics/analytics'
-import {useQueryClient} from '@tanstack/react-query'
-import {RQKEY as FEED_RQKEY} from '#/state/queries/post-feed'
-import {MainScrollProvider} from '../util/MainScrollProvider'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {useSetMinimalShellMode} from '#/state/shell'
-import {FeedDescriptor, FeedParams} from '#/state/queries/post-feed'
-import {ComposeIcon2} from 'lib/icons'
-import {colors, s} from 'lib/styles'
-import {View, useWindowDimensions} from 'react-native'
-import {ListMethods} from '../util/List'
-import {Feed} from '../posts/Feed'
-import {TextLink} from '../util/Link'
-import {FAB} from '../util/fab/FAB'
-import {LoadLatestBtn} from '../util/load-latest/LoadLatestBtn'
+import {View} from 'react-native'
+import {AppBskyActorDefs, AppBskyFeedDefs} from '@atproto/api'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
-import {useSession} from '#/state/session'
-import {useComposerControls} from '#/state/shell/composer'
-import {listenSoftReset, emitSoftReset} from '#/state/events'
-import {truncateAndInvalidate} from '#/state/queries/util'
-import {TabState, getTabState, getRootNavigation} from '#/lib/routes/helpers'
+import {NavigationProp, useNavigation} from '@react-navigation/native'
+import {useQueryClient} from '@tanstack/react-query'
+
+import {VIDEO_FEED_URIS} from '#/lib/constants'
+import {ComposeIcon2} from '#/lib/icons'
+import {getRootNavigation, getTabState, TabState} from '#/lib/routes/helpers'
+import {AllNavigatorParams} from '#/lib/routes/types'
+import {logEvent} from '#/lib/statsig/statsig'
+import {s} from '#/lib/styles'
 import {isNative} from '#/platform/detection'
+import {listenSoftReset} from '#/state/events'
+import {FeedFeedbackProvider, useFeedFeedback} from '#/state/feed-feedback'
+import {useSetHomeBadge} from '#/state/home-badge'
+import {SavedFeedSourceInfo} from '#/state/queries/feed'
+import {RQKEY as FEED_RQKEY} from '#/state/queries/post-feed'
+import {FeedDescriptor, FeedParams} from '#/state/queries/post-feed'
+import {truncateAndInvalidate} from '#/state/queries/util'
+import {useSession} from '#/state/session'
+import {useSetMinimalShellMode} from '#/state/shell'
+import {useComposerControls} from '#/state/shell/composer'
+import {useHeaderOffset} from '#/components/hooks/useHeaderOffset'
+import {PostFeed} from '../posts/PostFeed'
+import {FAB} from '../util/fab/FAB'
+import {ListMethods} from '../util/List'
+import {LoadLatestBtn} from '../util/load-latest/LoadLatestBtn'
+import {MainScrollProvider} from '../util/MainScrollProvider'
 
 const POLL_FREQ = 60e3 // 60sec
 
 export function FeedPage({
   testID,
   isPageFocused,
+  isPageAdjacent,
   feed,
   feedParams,
   renderEmptyState,
   renderEndOfFeed,
+  savedFeedConfig,
+  feedInfo,
 }: {
   testID?: string
   feed: FeedDescriptor
   feedParams?: FeedParams
   isPageFocused: boolean
+  isPageAdjacent: boolean
   renderEmptyState: () => JSX.Element
   renderEndOfFeed?: () => JSX.Element
+  savedFeedConfig?: AppBskyActorDefs.SavedFeed
+  feedInfo: SavedFeedSourceInfo
 }) {
-  const {isSandbox, hasSession} = useSession()
-  const pal = usePalette('default')
+  const {hasSession} = useSession()
   const {_} = useLingui()
-  const navigation = useNavigation()
-  const {isDesktop} = useWebMediaQueries()
+  const navigation = useNavigation<NavigationProp<AllNavigatorParams>>()
   const queryClient = useQueryClient()
   const {openComposer} = useComposerControls()
   const [isScrolledDown, setIsScrolledDown] = React.useState(false)
   const setMinimalShellMode = useSetMinimalShellMode()
-  const {screen, track} = useAnalytics()
   const headerOffset = useHeaderOffset()
+  const feedFeedback = useFeedFeedback(feed, hasSession)
   const scrollElRef = React.useRef<ListMethods>(null)
   const [hasNew, setHasNew] = React.useState(false)
+  const setHomeBadge = useSetHomeBadge()
+  const isVideoFeed = React.useMemo(() => {
+    const isBskyVideoFeed = VIDEO_FEED_URIS.includes(feedInfo.uri)
+    const feedIsVideoMode =
+      feedInfo.contentMode === AppBskyFeedDefs.CONTENTMODEVIDEO
+    const _isVideoFeed = isBskyVideoFeed || feedIsVideoMode
+    return isNative && _isVideoFeed
+  }, [feedInfo])
+
+  React.useEffect(() => {
+    if (isPageFocused) {
+      setHomeBadge(hasNew)
+    }
+  }, [isPageFocused, hasNew, setHomeBadge])
 
   const scrollToTop = React.useCallback(() => {
     scrollElRef.current?.scrollToOffset({
@@ -76,6 +95,11 @@ export function FeedPage({
       scrollToTop()
       truncateAndInvalidate(queryClient, FEED_RQKEY(feed))
       setHasNew(false)
+      logEvent('feed:refresh', {
+        feedType: feed.split('|')[0],
+        feedUrl: feed,
+        reason: 'soft-reset',
+      })
     }
   }, [navigation, isPageFocused, scrollToTop, queryClient, feed, setHasNew])
 
@@ -84,105 +108,46 @@ export function FeedPage({
     if (!isPageFocused) {
       return
     }
-    screen('Feed')
     return listenSoftReset(onSoftReset)
-  }, [onSoftReset, screen, isPageFocused])
+  }, [onSoftReset, isPageFocused])
 
   const onPressCompose = React.useCallback(() => {
-    track('HomeScreen:PressCompose')
     openComposer({})
-  }, [openComposer, track])
+  }, [openComposer])
 
   const onPressLoadLatest = React.useCallback(() => {
     scrollToTop()
     truncateAndInvalidate(queryClient, FEED_RQKEY(feed))
     setHasNew(false)
+    logEvent('feed:refresh', {
+      feedType: feed.split('|')[0],
+      feedUrl: feed,
+      reason: 'load-latest',
+    })
   }, [scrollToTop, feed, queryClient, setHasNew])
 
-  const ListHeaderComponent = React.useCallback(() => {
-    if (isDesktop) {
-      return (
-        <View
-          style={[
-            pal.view,
-            {
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 18,
-              paddingVertical: 12,
-            },
-          ]}>
-          <TextLink
-            type="title-lg"
-            href="/"
-            style={[pal.text, {fontWeight: 'bold'}]}
-            text={
-              <>
-                {isSandbox ? 'SANDBOX' : 'Bluesky'}{' '}
-                {hasNew && (
-                  <View
-                    style={{
-                      top: -8,
-                      backgroundColor: colors.blue3,
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                    }}
-                  />
-                )}
-              </>
-            }
-            onPress={emitSoftReset}
-          />
-          {hasSession && (
-            <TextLink
-              type="title-lg"
-              href="/settings/home-feed"
-              style={{fontWeight: 'bold'}}
-              accessibilityLabel={_(msg`Feed Preferences`)}
-              accessibilityHint=""
-              text={
-                <FontAwesomeIcon
-                  icon="sliders"
-                  style={pal.textLight as FontAwesomeIconStyle}
-                />
-              }
-            />
-          )}
-        </View>
-      )
-    }
-    return <></>
-  }, [
-    isDesktop,
-    pal.view,
-    pal.text,
-    pal.textLight,
-    hasNew,
-    _,
-    isSandbox,
-    hasSession,
-  ])
-
+  const shouldPrefetch = isNative && isPageAdjacent
   return (
-    <View testID={testID} style={s.h100pct}>
+    <View testID={testID}>
       <MainScrollProvider>
-        <Feed
-          testID={testID ? `${testID}-feed` : undefined}
-          enabled={isPageFocused}
-          feed={feed}
-          feedParams={feedParams}
-          pollInterval={POLL_FREQ}
-          disablePoll={hasNew}
-          scrollElRef={scrollElRef}
-          onScrolledDownChange={setIsScrolledDown}
-          onHasNew={setHasNew}
-          renderEmptyState={renderEmptyState}
-          renderEndOfFeed={renderEndOfFeed}
-          ListHeaderComponent={ListHeaderComponent}
-          headerOffset={headerOffset}
-        />
+        <FeedFeedbackProvider value={feedFeedback}>
+          <PostFeed
+            testID={testID ? `${testID}-feed` : undefined}
+            enabled={isPageFocused || shouldPrefetch}
+            feed={feed}
+            feedParams={feedParams}
+            pollInterval={POLL_FREQ}
+            disablePoll={hasNew || !isPageFocused}
+            scrollElRef={scrollElRef}
+            onScrolledDownChange={setIsScrolledDown}
+            onHasNew={setHasNew}
+            renderEmptyState={renderEmptyState}
+            renderEndOfFeed={renderEndOfFeed}
+            headerOffset={headerOffset}
+            savedFeedConfig={savedFeedConfig}
+            isVideoFeed={isVideoFeed}
+          />
+        </FeedFeedbackProvider>
       </MainScrollProvider>
       {(isScrolledDown || hasNew) && (
         <LoadLatestBtn
@@ -204,26 +169,4 @@ export function FeedPage({
       )}
     </View>
   )
-}
-
-function useHeaderOffset() {
-  const {isDesktop, isTablet} = useWebMediaQueries()
-  const {fontScale} = useWindowDimensions()
-  const {hasSession} = useSession()
-  if (isDesktop || isTablet) {
-    return 0
-  }
-  if (hasSession) {
-    const navBarPad = 16
-    const navBarText = 21 * fontScale
-    const tabBarPad = 20 + 3 // nav bar padding + border
-    const tabBarText = 16 * fontScale
-    const magic = 7 * fontScale
-    return navBarPad + navBarText + tabBarPad + tabBarText + magic
-  } else {
-    const navBarPad = 16
-    const navBarText = 21 * fontScale
-    const magic = 4 * fontScale
-    return navBarPad + navBarText + magic
-  }
 }

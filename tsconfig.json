@@ -3,7 +3,7 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "module": "esnext",
-    "types": ["node"],
+    "types": ["node", "jest"],
     "paths": {
       "#/*": ["./src/*"],
       "lib/*": ["./src/lib/*"],
@@ -12,5 +12,6 @@
       "view/*": ["./src/view/*"],
       "crypto": ["./src/platform/crypto.ts"]
     }
-  }
+  },
+  "exclude": ["bskyweb", "bskyembed", "web-build"]
 }

@@ -1,33 +1,39 @@
 import React from 'react'
 import {
-  Pressable,
-  Text,
-  PressableProps,
-  TextProps,
-  ViewStyle,
   AccessibilityProps,
-  View,
-  TextStyle,
-  StyleSheet,
+  GestureResponderEvent,
+  MouseEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  PressableProps,
   StyleProp,
+  StyleSheet,
+  TargetedEvent,
+  TextProps,
+  TextStyle,
+  View,
+  ViewStyle,
 } from 'react-native'
-import LinearGradient from 'react-native-linear-gradient'
+import {LinearGradient} from 'expo-linear-gradient'
 
-import {useTheme, atoms as a, tokens, android, flatten} from '#/alf'
+import {atoms as a, flatten, select, tokens, useTheme} from '#/alf'
 import {Props as SVGIconProps} from '#/components/icons/common'
+import {Text} from '#/components/Typography'
 
 export type ButtonVariant = 'solid' | 'outline' | 'ghost' | 'gradient'
 export type ButtonColor =
   | 'primary'
   | 'secondary'
+  | 'secondary_inverted'
   | 'negative'
+  | 'gradient_primary'
   | 'gradient_sky'
   | 'gradient_midnight'
   | 'gradient_sunrise'
   | 'gradient_sunset'
   | 'gradient_nordic'
   | 'gradient_bonfire'
-export type ButtonSize = 'small' | 'large'
+export type ButtonSize = 'tiny' | 'small' | 'large'
 export type ButtonShape = 'round' | 'square' | 'default'
 export type VariantProps = {
   /**
@@ -48,24 +54,49 @@ export type VariantProps = {
   shape?: ButtonShape
 }
 
-export type ButtonProps = React.PropsWithChildren<
-  Pick<PressableProps, 'disabled' | 'onPress'> &
-    AccessibilityProps &
-    VariantProps & {
-      label: string
-      style?: StyleProp<ViewStyle>
-    }
->
+export type ButtonState = {
+  hovered: boolean
+  focused: boolean
+  pressed: boolean
+  disabled: boolean
+}
+
+export type ButtonContext = VariantProps & ButtonState
+
+type NonTextElements =
+  | React.ReactElement
+  | Iterable<React.ReactElement | null | undefined | boolean>
+
+export type ButtonProps = Pick<
+  PressableProps,
+  | 'disabled'
+  | 'onPress'
+  | 'testID'
+  | 'onLongPress'
+  | 'hitSlop'
+  | 'onHoverIn'
+  | 'onHoverOut'
+  | 'onPressIn'
+  | 'onPressOut'
+  | 'onFocus'
+  | 'onBlur'
+> &
+  AccessibilityProps &
+  VariantProps & {
+    testID?: string
+    /**
+     * For a11y, try to make this descriptive and clear
+     */
+    label: string
+    style?: StyleProp<ViewStyle>
+    hoverStyle?: StyleProp<ViewStyle>
+    children: NonTextElements | ((context: ButtonContext) => NonTextElements)
+    PressableComponent?: React.ComponentType<PressableProps>
+  }
+
 export type ButtonTextProps = TextProps & VariantProps & {disabled?: boolean}
 
-const Context = React.createContext<
-  VariantProps & {
-    hovered: boolean
-    focused: boolean
-    pressed: boolean
-    disabled: boolean
-  }
->({
+const Context = React.createContext<VariantProps & ButtonState>({
   hovered: false,
   focused: false,
   pressed: false,
@@ -76,246 +107,325 @@ export function useButtonContext() {
   return React.useContext(Context)
 }
 
-export function Button({
-  children,
-  variant,
-  color,
-  size,
-  shape = 'default',
-  label,
-  disabled = false,
-  style,
-  ...rest
-}: ButtonProps) {
-  const t = useTheme()
-  const [state, setState] = React.useState({
-    pressed: false,
-    hovered: false,
-    focused: false,
-  })
-
-  const onPressIn = React.useCallback(() => {
-    setState(s => ({
-      ...s,
-      pressed: true,
-    }))
-  }, [setState])
-  const onPressOut = React.useCallback(() => {
-    setState(s => ({
-      ...s,
+export const Button = React.forwardRef<View, ButtonProps>(
+  (
+    {
+      children,
+      variant,
+      color,
+      size,
+      shape = 'default',
+      label,
+      disabled = false,
+      style,
+      hoverStyle: hoverStyleProp,
+      PressableComponent = Pressable,
+      onPressIn: onPressInOuter,
+      onPressOut: onPressOutOuter,
+      onHoverIn: onHoverInOuter,
+      onHoverOut: onHoverOutOuter,
+      onFocus: onFocusOuter,
+      onBlur: onBlurOuter,
+      ...rest
+    },
+    ref,
+  ) => {
+    const t = useTheme()
+    const [state, setState] = React.useState({
       pressed: false,
-    }))
-  }, [setState])
-  const onHoverIn = React.useCallback(() => {
-    setState(s => ({
-      ...s,
-      hovered: true,
-    }))
-  }, [setState])
-  const onHoverOut = React.useCallback(() => {
-    setState(s => ({
-      ...s,
       hovered: false,
-    }))
-  }, [setState])
-  const onFocus = React.useCallback(() => {
-    setState(s => ({
-      ...s,
-      focused: true,
-    }))
-  }, [setState])
-  const onBlur = React.useCallback(() => {
-    setState(s => ({
-      ...s,
       focused: false,
-    }))
-  }, [setState])
+    })
 
-  const {baseStyles, hoverStyles, focusStyles} = React.useMemo(() => {
-    const baseStyles: ViewStyle[] = []
-    const hoverStyles: ViewStyle[] = []
-    const light = t.name === 'light'
+    const onPressIn = React.useCallback(
+      (e: GestureResponderEvent) => {
+        setState(s => ({
+          ...s,
+          pressed: true,
+        }))
+        onPressInOuter?.(e)
+      },
+      [setState, onPressInOuter],
+    )
+    const onPressOut = React.useCallback(
+      (e: GestureResponderEvent) => {
+        setState(s => ({
+          ...s,
+          pressed: false,
+        }))
+        onPressOutOuter?.(e)
+      },
+      [setState, onPressOutOuter],
+    )
+    const onHoverIn = React.useCallback(
+      (e: MouseEvent) => {
+        setState(s => ({
+          ...s,
+          hovered: true,
+        }))
+        onHoverInOuter?.(e)
+      },
+      [setState, onHoverInOuter],
+    )
+    const onHoverOut = React.useCallback(
+      (e: MouseEvent) => {
+        setState(s => ({
+          ...s,
+          hovered: false,
+        }))
+        onHoverOutOuter?.(e)
+      },
+      [setState, onHoverOutOuter],
+    )
+    const onFocus = React.useCallback(
+      (e: NativeSyntheticEvent<TargetedEvent>) => {
+        setState(s => ({
+          ...s,
+          focused: true,
+        }))
+        onFocusOuter?.(e)
+      },
+      [setState, onFocusOuter],
+    )
+    const onBlur = React.useCallback(
+      (e: NativeSyntheticEvent<TargetedEvent>) => {
+        setState(s => ({
+          ...s,
+          focused: false,
+        }))
+        onBlurOuter?.(e)
+      },
+      [setState, onBlurOuter],
+    )
 
-    if (color === 'primary') {
-      if (variant === 'solid') {
-        if (!disabled) {
-          baseStyles.push({
-            backgroundColor: t.palette.primary_500,
+    const {baseStyles, hoverStyles} = React.useMemo(() => {
+      const baseStyles: ViewStyle[] = []
+      const hoverStyles: ViewStyle[] = []
+
+      if (color === 'primary') {
+        if (variant === 'solid') {
+          if (!disabled) {
+            baseStyles.push({
+              backgroundColor: t.palette.primary_500,
+            })
+            hoverStyles.push({
+              backgroundColor: t.palette.primary_600,
+            })
+          } else {
+            baseStyles.push({
+              backgroundColor: select(t.name, {
+                light: t.palette.primary_700,
+                dim: t.palette.primary_300,
+                dark: t.palette.primary_300,
+              }),
+            })
+          }
+        } else if (variant === 'outline') {
+          baseStyles.push(a.border, t.atoms.bg, {
+            borderWidth: 1,
           })
-          hoverStyles.push({
-            backgroundColor: t.palette.primary_600,
-          })
-        } else {
-          baseStyles.push({
-            backgroundColor: t.palette.primary_700,
-          })
+
+          if (!disabled) {
+            baseStyles.push(a.border, {
+              borderColor: t.palette.primary_500,
+            })
+            hoverStyles.push(a.border, {
+              backgroundColor: t.palette.primary_50,
+            })
+          } else {
+            baseStyles.push(a.border, {
+              borderColor: t.palette.primary_200,
+            })
+          }
+        } else if (variant === 'ghost') {
+          if (!disabled) {
+            baseStyles.push(t.atoms.bg)
+            hoverStyles.push({
+              backgroundColor: t.palette.primary_100,
+            })
+          }
         }
-      } else if (variant === 'outline') {
-        baseStyles.push(a.border, t.atoms.bg, {
-          borderWidth: 1,
-        })
+      } else if (color === 'secondary') {
+        if (variant === 'solid') {
+          if (!disabled) {
+            baseStyles.push(t.atoms.bg_contrast_25)
+            hoverStyles.push(t.atoms.bg_contrast_50)
+          } else {
+            baseStyles.push(t.atoms.bg_contrast_100)
+          }
+        } else if (variant === 'outline') {
+          baseStyles.push(a.border, t.atoms.bg, {
+            borderWidth: 1,
+          })
 
-        if (!disabled) {
-          baseStyles.push(a.border, {
-            borderColor: tokens.color.blue_500,
-          })
-          hoverStyles.push(a.border, {
-            backgroundColor: light
-              ? t.palette.primary_50
-              : t.palette.primary_950,
-          })
-        } else {
-          baseStyles.push(a.border, {
-            borderColor: light ? tokens.color.blue_200 : tokens.color.blue_900,
-          })
+          if (!disabled) {
+            baseStyles.push(a.border, {
+              borderColor: t.palette.contrast_300,
+            })
+            hoverStyles.push(t.atoms.bg_contrast_50)
+          } else {
+            baseStyles.push(a.border, {
+              borderColor: t.palette.contrast_200,
+            })
+          }
+        } else if (variant === 'ghost') {
+          if (!disabled) {
+            baseStyles.push(t.atoms.bg)
+            hoverStyles.push({
+              backgroundColor: t.palette.contrast_25,
+            })
+          }
         }
-      } else if (variant === 'ghost') {
-        if (!disabled) {
-          baseStyles.push(t.atoms.bg)
-          hoverStyles.push({
-            backgroundColor: light
-              ? t.palette.primary_100
-              : t.palette.primary_900,
+      } else if (color === 'secondary_inverted') {
+        if (variant === 'solid') {
+          if (!disabled) {
+            baseStyles.push({
+              backgroundColor: t.palette.contrast_900,
+            })
+            hoverStyles.push({
+              backgroundColor: t.palette.contrast_950,
+            })
+          } else {
+            baseStyles.push({
+              backgroundColor: t.palette.contrast_600,
+            })
+          }
+        } else if (variant === 'outline') {
+          baseStyles.push(a.border, t.atoms.bg, {
+            borderWidth: 1,
           })
+
+          if (!disabled) {
+            baseStyles.push(a.border, {
+              borderColor: t.palette.contrast_300,
+            })
+            hoverStyles.push(t.atoms.bg_contrast_50)
+          } else {
+            baseStyles.push(a.border, {
+              borderColor: t.palette.contrast_200,
+            })
+          }
+        } else if (variant === 'ghost') {
+          if (!disabled) {
+            baseStyles.push(t.atoms.bg)
+            hoverStyles.push({
+              backgroundColor: t.palette.contrast_25,
+            })
+          }
+        }
+      } else if (color === 'negative') {
+        if (variant === 'solid') {
+          if (!disabled) {
+            baseStyles.push({
+              backgroundColor: t.palette.negative_500,
+            })
+            hoverStyles.push({
+              backgroundColor: t.palette.negative_600,
+            })
+          } else {
+            baseStyles.push({
+              backgroundColor: select(t.name, {
+                light: t.palette.negative_700,
+                dim: t.palette.negative_300,
+                dark: t.palette.negative_300,
+              }),
+            })
+          }
+        } else if (variant === 'outline') {
+          baseStyles.push(a.border, t.atoms.bg, {
+            borderWidth: 1,
+          })
+
+          if (!disabled) {
+            baseStyles.push(a.border, {
+              borderColor: t.palette.negative_500,
+            })
+            hoverStyles.push(a.border, {
+              backgroundColor: t.palette.negative_50,
+            })
+          } else {
+            baseStyles.push(a.border, {
+              borderColor: t.palette.negative_200,
+            })
+          }
+        } else if (variant === 'ghost') {
+          if (!disabled) {
+            baseStyles.push(t.atoms.bg)
+            hoverStyles.push({
+              backgroundColor: t.palette.negative_100,
+            })
+          }
         }
       }
-    } else if (color === 'secondary') {
-      if (variant === 'solid') {
-        if (!disabled) {
-          baseStyles.push({
-            backgroundColor: light
-              ? tokens.color.gray_50
-              : tokens.color.gray_900,
-          })
-          hoverStyles.push({
-            backgroundColor: light
-              ? tokens.color.gray_100
-              : tokens.color.gray_950,
-          })
-        } else {
-          baseStyles.push({
-            backgroundColor: light
-              ? tokens.color.gray_200
-              : tokens.color.gray_950,
-          })
-        }
-      } else if (variant === 'outline') {
-        baseStyles.push(a.border, t.atoms.bg, {
-          borderWidth: 1,
-        })
 
-        if (!disabled) {
-          baseStyles.push(a.border, {
-            borderColor: light ? tokens.color.gray_300 : tokens.color.gray_700,
-          })
-          hoverStyles.push(a.border, t.atoms.bg_contrast_50)
-        } else {
-          baseStyles.push(a.border, {
-            borderColor: light ? tokens.color.gray_200 : tokens.color.gray_800,
-          })
-        }
-      } else if (variant === 'ghost') {
-        if (!disabled) {
-          baseStyles.push(t.atoms.bg)
-          hoverStyles.push({
-            backgroundColor: light
-              ? tokens.color.gray_100
-              : tokens.color.gray_900,
-          })
-        }
-      }
-    } else if (color === 'negative') {
-      if (variant === 'solid') {
-        if (!disabled) {
+      if (shape === 'default') {
+        if (size === 'large') {
           baseStyles.push({
-            backgroundColor: t.palette.negative_400,
+            paddingVertical: 13,
+            paddingHorizontal: 20,
+            borderRadius: 8,
+            gap: 8,
           })
-          hoverStyles.push({
-            backgroundColor: t.palette.negative_500,
-          })
-        } else {
+        } else if (size === 'small') {
           baseStyles.push({
-            backgroundColor: t.palette.negative_600,
+            paddingVertical: 9,
+            paddingHorizontal: 12,
+            borderRadius: 6,
+            gap: 6,
+          })
+        } else if (size === 'tiny') {
+          baseStyles.push({
+            paddingVertical: 4,
+            paddingHorizontal: 8,
+            borderRadius: 4,
+            gap: 4,
           })
         }
-      } else if (variant === 'outline') {
-        baseStyles.push(a.border, t.atoms.bg, {
-          borderWidth: 1,
-        })
+      } else if (shape === 'round' || shape === 'square') {
+        if (size === 'large') {
+          if (shape === 'round') {
+            baseStyles.push({height: 46, width: 46})
+          } else {
+            baseStyles.push({height: 44, width: 44})
+          }
+        } else if (size === 'small') {
+          if (shape === 'round') {
+            baseStyles.push({height: 34, width: 34})
+          } else {
+            baseStyles.push({height: 34, width: 34})
+          }
+        } else if (size === 'tiny') {
+          if (shape === 'round') {
+            baseStyles.push({height: 22, width: 22})
+          } else {
+            baseStyles.push({height: 21, width: 21})
+          }
+        }
 
-        if (!disabled) {
-          baseStyles.push(a.border, {
-            borderColor: t.palette.negative_400,
-          })
-          hoverStyles.push(a.border, {
-            backgroundColor: light
-              ? t.palette.negative_50
-              : t.palette.negative_975,
-          })
-        } else {
-          baseStyles.push(a.border, {
-            borderColor: light
-              ? t.palette.negative_200
-              : t.palette.negative_900,
-          })
-        }
-      } else if (variant === 'ghost') {
-        if (!disabled) {
-          baseStyles.push(t.atoms.bg)
-          hoverStyles.push({
-            backgroundColor: light
-              ? t.palette.negative_100
-              : t.palette.negative_950,
-          })
-        }
-      }
-    }
-
-    if (shape === 'default') {
-      if (size === 'large') {
-        baseStyles.push({paddingVertical: 15}, a.px_2xl, a.rounded_sm, a.gap_md)
-      } else if (size === 'small') {
-        baseStyles.push({paddingVertical: 9}, a.px_lg, a.rounded_sm, a.gap_sm)
-      }
-    } else if (shape === 'round' || shape === 'square') {
-      if (size === 'large') {
         if (shape === 'round') {
-          baseStyles.push({height: 54, width: 54})
-        } else {
-          baseStyles.push({height: 50, width: 50})
+          baseStyles.push(a.rounded_full)
+        } else if (shape === 'square') {
+          if (size === 'tiny') {
+            baseStyles.push(a.rounded_xs)
+          } else {
+            baseStyles.push(a.rounded_sm)
+          }
         }
-      } else if (size === 'small') {
-        baseStyles.push({height: 40, width: 40})
       }
 
-      if (shape === 'round') {
-        baseStyles.push(a.rounded_full)
-      } else if (shape === 'square') {
-        baseStyles.push(a.rounded_sm)
+      return {
+        baseStyles,
+        hoverStyles,
       }
-    }
+    }, [t, variant, color, size, shape, disabled])
 
-    return {
-      baseStyles,
-      hoverStyles,
-      focusStyles: [
-        ...hoverStyles,
-        {
-          outline: 0,
-        } as ViewStyle,
-      ],
-    }
-  }, [t, variant, color, size, shape, disabled])
-
-  const {gradientColors, gradientHoverColors, gradientLocations} =
-    React.useMemo(() => {
-      const colors: string[] = []
-      const hoverColors: string[] = []
-      const locations: number[] = []
+    const gradientValues = React.useMemo(() => {
       const gradient = {
         primary: tokens.gradients.sky,
         secondary: tokens.gradients.sky,
+        secondary_inverted: tokens.gradients.sky,
         negative: tokens.gradients.sky,
+        gradient_primary: tokens.gradients.primary,
         gradient_sky: tokens.gradients.sky,
         gradient_midnight: tokens.gradients.midnight,
         gradient_sunrise: tokens.gradients.sunrise,
@@ -325,88 +435,109 @@ export function Button({
       }[color || 'primary']
 
       if (variant === 'gradient') {
-        colors.push(...gradient.values.map(([_, color]) => color))
-        hoverColors.push(...gradient.values.map(_ => gradient.hover_value))
-        locations.push(...gradient.values.map(([location, _]) => location))
-      }
+        if (gradient.values.length < 2) {
+          throw new Error(
+            'Gradient buttons must have at least two colors in the gradient',
+          )
+        }
 
-      return {
-        gradientColors: colors,
-        gradientHoverColors: hoverColors,
-        gradientLocations: locations,
+        return {
+          colors: gradient.values.map(([_, color]) => color) as [
+            string,
+            string,
+            ...string[],
+          ],
+          hoverColors: gradient.values.map(_ => gradient.hover_value) as [
+            string,
+            string,
+            ...string[],
+          ],
+          locations: gradient.values.map(([location, _]) => location) as [
+            number,
+            number,
+            ...number[],
+          ],
+        }
       }
     }, [variant, color])
 
-  const context = React.useMemo(
-    () => ({
-      ...state,
-      variant,
-      color,
-      size,
-      disabled: disabled || false,
-    }),
-    [state, variant, color, size, disabled],
-  )
-
-  return (
-    <Pressable
-      role="button"
-      accessibilityHint={undefined} // optional
-      {...rest}
-      aria-label={label}
-      aria-pressed={state.pressed}
-      accessibilityLabel={label}
-      disabled={disabled || false}
-      accessibilityState={{
+    const context = React.useMemo<ButtonContext>(
+      () => ({
+        ...state,
+        variant,
+        color,
+        size,
         disabled: disabled || false,
-      }}
-      style={[
-        flatten(style),
-        a.flex_row,
-        a.align_center,
-        a.justify_center,
-        a.overflow_hidden,
-        a.justify_center,
-        ...baseStyles,
-        ...(state.hovered || state.pressed ? hoverStyles : []),
-        ...(state.focused ? focusStyles : []),
-      ]}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      onHoverIn={onHoverIn}
-      onHoverOut={onHoverOut}
-      onFocus={onFocus}
-      onBlur={onBlur}>
-      {variant === 'gradient' && (
-        <LinearGradient
-          colors={
-            state.hovered || state.pressed || state.focused
-              ? gradientHoverColors
-              : gradientColors
-          }
-          locations={gradientLocations}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 1}}
-          style={[a.absolute, a.inset_0]}
-        />
-      )}
-      <Context.Provider value={context}>
-        {typeof children === 'string' ? (
-          <ButtonText>{children}</ButtonText>
-        ) : (
-          children
+      }),
+      [state, variant, color, size, disabled],
+    )
+
+    const flattenedBaseStyles = flatten([baseStyles, style])
+
+    return (
+      <PressableComponent
+        role="button"
+        accessibilityHint={undefined} // optional
+        {...rest}
+        // @ts-ignore - this will always be a pressable
+        ref={ref}
+        aria-label={label}
+        aria-pressed={state.pressed}
+        accessibilityLabel={label}
+        disabled={disabled || false}
+        accessibilityState={{
+          disabled: disabled || false,
+        }}
+        style={[
+          a.flex_row,
+          a.align_center,
+          a.justify_center,
+          flattenedBaseStyles,
+          ...(state.hovered || state.pressed
+            ? [hoverStyles, flatten(hoverStyleProp)]
+            : []),
+        ]}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
+        onFocus={onFocus}
+        onBlur={onBlur}>
+        {variant === 'gradient' && gradientValues && (
+          <View
+            style={[
+              a.absolute,
+              a.inset_0,
+              a.overflow_hidden,
+              {borderRadius: flattenedBaseStyles.borderRadius},
+            ]}>
+            <LinearGradient
+              colors={
+                state.hovered || state.pressed
+                  ? gradientValues.hoverColors
+                  : gradientValues.colors
+              }
+              locations={gradientValues.locations}
+              start={{x: 0, y: 0}}
+              end={{x: 1, y: 1}}
+              style={[a.absolute, a.inset_0]}
+            />
+          </View>
         )}
-      </Context.Provider>
-    </Pressable>
-  )
-}
+        <Context.Provider value={context}>
+          {typeof children === 'function' ? children(context) : children}
+        </Context.Provider>
+      </PressableComponent>
+    )
+  },
+)
+Button.displayName = 'Button'
 
 export function useSharedButtonTextStyles() {
   const t = useTheme()
   const {color, variant, disabled, size} = useButtonContext()
   return React.useMemo(() => {
     const baseStyles: TextStyle[] = []
-    const light = t.name === 'light'
 
     if (color === 'primary') {
       if (variant === 'solid') {
@@ -418,7 +549,7 @@ export function useSharedButtonTextStyles() {
       } else if (variant === 'outline') {
         if (!disabled) {
           baseStyles.push({
-            color: light ? t.palette.primary_600 : t.palette.primary_500,
+            color: t.palette.primary_600,
           })
         } else {
           baseStyles.push({color: t.palette.primary_600, opacity: 0.5})
@@ -434,31 +565,63 @@ export function useSharedButtonTextStyles() {
       if (variant === 'solid' || variant === 'gradient') {
         if (!disabled) {
           baseStyles.push({
-            color: light ? tokens.color.gray_700 : tokens.color.gray_100,
+            color: t.palette.contrast_700,
           })
         } else {
           baseStyles.push({
-            color: light ? tokens.color.gray_400 : tokens.color.gray_700,
+            color: t.palette.contrast_400,
           })
         }
       } else if (variant === 'outline') {
         if (!disabled) {
           baseStyles.push({
-            color: light ? tokens.color.gray_600 : tokens.color.gray_300,
+            color: t.palette.contrast_600,
           })
         } else {
           baseStyles.push({
-            color: light ? tokens.color.gray_400 : tokens.color.gray_700,
+            color: t.palette.contrast_300,
           })
         }
       } else if (variant === 'ghost') {
         if (!disabled) {
           baseStyles.push({
-            color: light ? tokens.color.gray_600 : tokens.color.gray_300,
+            color: t.palette.contrast_600,
           })
         } else {
           baseStyles.push({
-            color: light ? tokens.color.gray_400 : tokens.color.gray_600,
+            color: t.palette.contrast_300,
+          })
+        }
+      }
+    } else if (color === 'secondary_inverted') {
+      if (variant === 'solid' || variant === 'gradient') {
+        if (!disabled) {
+          baseStyles.push({
+            color: t.palette.contrast_100,
+          })
+        } else {
+          baseStyles.push({
+            color: t.palette.contrast_400,
+          })
+        }
+      } else if (variant === 'outline') {
+        if (!disabled) {
+          baseStyles.push({
+            color: t.palette.contrast_600,
+          })
+        } else {
+          baseStyles.push({
+            color: t.palette.contrast_300,
+          })
+        }
+      } else if (variant === 'ghost') {
+        if (!disabled) {
+          baseStyles.push({
+            color: t.palette.contrast_600,
+          })
+        } else {
+          baseStyles.push({
+            color: t.palette.contrast_300,
           })
         }
       }
@@ -491,9 +654,11 @@ export function useSharedButtonTextStyles() {
     }
 
     if (size === 'large') {
-      baseStyles.push(a.text_md, android({paddingBottom: 1}))
-    } else {
-      baseStyles.push(a.text_sm, android({paddingBottom: 1}))
+      baseStyles.push(a.text_md, a.leading_tight)
+    } else if (size === 'small') {
+      baseStyles.push(a.text_sm, a.leading_tight)
+    } else if (size === 'tiny') {
+      baseStyles.push(a.text_xs, a.leading_tight)
     }
 
     return StyleSheet.flatten(baseStyles)
@@ -513,27 +678,98 @@ export function ButtonText({children, style, ...rest}: ButtonTextProps) {
 export function ButtonIcon({
   icon: Comp,
   position,
+  size,
 }: {
   icon: React.ComponentType<SVGIconProps>
   position?: 'left' | 'right'
+  size?: SVGIconProps['size']
 }) {
-  const {size, disabled} = useButtonContext()
+  const {size: buttonSize, disabled} = useButtonContext()
   const textStyles = useSharedButtonTextStyles()
+  const {iconSize, iconContainerSize} = React.useMemo(() => {
+    /**
+     * Pre-set icon sizes for different button sizes
+     */
+    const iconSizeShorthand =
+      size ??
+      (({
+        large: 'sm',
+        small: 'sm',
+        tiny: 'xs',
+      }[buttonSize || 'small'] || 'sm') as Exclude<
+        SVGIconProps['size'],
+        undefined
+      >)
+
+    /*
+     * Copied here from icons/common.tsx so we can tweak if we need to, but
+     * also so that we can calculate transforms.
+     */
+    const iconSize = {
+      xs: 12,
+      sm: 16,
+      md: 20,
+      lg: 24,
+      xl: 28,
+      '2xl': 32,
+    }[iconSizeShorthand]
+
+    /*
+     * Goal here is to match rendered text size so that different size icons
+     * don't increase button size
+     */
+    const iconContainerSize = {
+      large: 18,
+      small: 16,
+      tiny: 13,
+    }[buttonSize || 'small']
+
+    return {
+      iconSize,
+      iconContainerSize,
+    }
+  }, [buttonSize, size])
 
   return (
     <View
       style={[
         a.z_20,
         {
+          width: iconContainerSize,
+          height: iconContainerSize,
           opacity: disabled ? 0.7 : 1,
           marginLeft: position === 'left' ? -2 : 0,
           marginRight: position === 'right' ? -2 : 0,
         },
       ]}>
-      <Comp
-        size={size === 'large' ? 'md' : 'sm'}
-        style={[{color: textStyles.color, pointerEvents: 'none'}]}
-      />
+      <View
+        style={[
+          a.absolute,
+          {
+            width: iconSize,
+            height: iconSize,
+            top: '50%',
+            left: '50%',
+            transform: [
+              {
+                translateX: (iconSize / 2) * -1,
+              },
+              {
+                translateY: (iconSize / 2) * -1,
+              },
+            ],
+          },
+        ]}>
+        <Comp
+          width={iconSize}
+          style={[
+            {
+              color: textStyles.color,
+              pointerEvents: 'none',
+            },
+          ]}
+        />
+      </View>
     </View>
   )
 }

@@ -1,108 +1,94 @@
-import React from 'react'
-import {View, Pressable} from 'react-native'
-import DateTimePicker, {
-  BaseProps as DateTimePickerProps,
-} from '@react-native-community/datetimepicker'
+import {useCallback, useImperativeHandle, useState} from 'react'
+import {Keyboard} from 'react-native'
+import DatePicker from 'react-native-date-picker'
 
-import {useTheme, atoms} from '#/alf'
-import {Text} from '#/components/Typography'
-import {useInteractionState} from '#/components/hooks/useInteractionState'
-import * as TextField from '#/components/forms/TextField'
-import {CalendarDays_Stroke2_Corner0_Rounded as CalendarDays} from '#/components/icons/CalendarDays'
-
+import {useTheme} from '#/alf'
 import {DateFieldProps} from '#/components/forms/DateField/types'
-import {
-  localizeDate,
-  toSimpleDateString,
-} from '#/components/forms/DateField/utils'
+import {toSimpleDateString} from '#/components/forms/DateField/utils'
+import * as TextField from '#/components/forms/TextField'
+import {DateFieldButton} from './index.shared'
 
 export * as utils from '#/components/forms/DateField/utils'
-export const Label = TextField.Label
+export const LabelText = TextField.LabelText
 
 export function DateField({
   value,
+  inputRef,
   onChangeDate,
   label,
   isInvalid,
   testID,
+  accessibilityHint,
+  maximumDate,
 }: DateFieldProps) {
   const t = useTheme()
-  const [open, setOpen] = React.useState(false)
-  const {
-    state: pressed,
-    onIn: onPressIn,
-    onOut: onPressOut,
-  } = useInteractionState()
-  const {state: focused, onIn: onFocus, onOut: onBlur} = useInteractionState()
+  const [open, setOpen] = useState(false)
 
-  const {chromeFocus, chromeError, chromeErrorHover} =
-    TextField.useSharedInputStyles()
-
-  const onChangeInternal = React.useCallback<
-    Required<DateTimePickerProps>['onChange']
-  >(
-    (_event, date) => {
+  const onChangeInternal = useCallback(
+    (date: Date) => {
       setOpen(false)
 
-      if (date) {
-        const formatted = toSimpleDateString(date)
-        onChangeDate(formatted)
-      }
+      const formatted = toSimpleDateString(date)
+      onChangeDate(formatted)
     },
     [onChangeDate, setOpen],
   )
 
-  return (
-    <View style={[atoms.relative, atoms.w_full]}>
-      <Pressable
-        aria-label={label}
-        accessibilityLabel={label}
-        accessibilityHint={undefined}
-        onPress={() => setOpen(true)}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        style={[
-          {
-            paddingTop: 16,
-            paddingBottom: 16,
-            borderColor: 'transparent',
-            borderWidth: 2,
-          },
-          atoms.flex_row,
-          atoms.flex_1,
-          atoms.w_full,
-          atoms.px_lg,
-          atoms.rounded_sm,
-          t.atoms.bg_contrast_50,
-          focused || pressed ? chromeFocus : {},
-          isInvalid ? chromeError : {},
-          isInvalid && (focused || pressed) ? chromeErrorHover : {},
-        ]}>
-        <TextField.Icon icon={CalendarDays} />
+  useImperativeHandle(
+    inputRef,
+    () => ({
+      focus: () => {
+        Keyboard.dismiss()
+        setOpen(true)
+      },
+      blur: () => {
+        setOpen(false)
+      },
+    }),
+    [],
+  )
 
-        <Text
-          style={[atoms.text_md, atoms.pl_xs, t.atoms.text, {paddingTop: 3}]}>
-          {localizeDate(value)}
-        </Text>
-      </Pressable>
+  const onPress = useCallback(() => {
+    setOpen(true)
+  }, [])
+
+  const onCancel = useCallback(() => {
+    setOpen(false)
+  }, [])
+
+  return (
+    <>
+      <DateFieldButton
+        label={label}
+        value={value}
+        onPress={onPress}
+        isInvalid={isInvalid}
+        accessibilityHint={accessibilityHint}
+      />
 
       {open && (
-        <DateTimePicker
+        // Android implementation of DatePicker currently does not change default button colors according to theme and only takes hex values for buttonColor
+        // Can remove the buttonColor setting if/when this PR is merged: https://github.com/henninghall/react-native-date-picker/pull/871
+        <DatePicker
+          modal
+          open
+          timeZoneOffsetInMinutes={0}
+          theme={t.scheme}
+          // @ts-ignore TODO
+          buttonColor={t.name === 'light' ? '#000000' : '#ffffff'}
+          date={new Date(value)}
+          onConfirm={onChangeInternal}
+          onCancel={onCancel}
+          mode="date"
+          testID={`${testID}-datepicker`}
           aria-label={label}
           accessibilityLabel={label}
-          accessibilityHint={undefined}
-          testID={`${testID}-datepicker`}
-          mode="date"
-          timeZoneName={'Etc/UTC'}
-          display="spinner"
-          // @ts-ignore applies in iOS only -prf
-          themeVariant={t.name === 'dark' ? 'dark' : 'light'}
-          value={new Date(value)}
-          onChange={onChangeInternal}
+          accessibilityHint={accessibilityHint}
+          maximumDate={
+            maximumDate ? new Date(toSimpleDateString(maximumDate)) : undefined
+          }
         />
       )}
-    </View>
+    </>
   )
 }

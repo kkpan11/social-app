@@ -1,214 +1,140 @@
-import React from 'react'
-import {StyleSheet, TouchableOpacity, View} from 'react-native'
-import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome'
-import {usePalette} from 'lib/hooks/usePalette'
-import {DesktopSearch} from './Search'
-import {DesktopFeeds} from './Feeds'
-import {Text} from 'view/com/util/text/Text'
-import {TextLink} from 'view/com/util/Link'
-import {FEEDBACK_FORM_URL, HELP_DESK_URL} from 'lib/constants'
-import {s} from 'lib/styles'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {formatCount} from 'view/com/util/numeric/format'
-import {useModalControls} from '#/state/modals'
+import {useEffect, useState} from 'react'
+import {View} from 'react-native'
+import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
-import {Plural, Trans, msg, plural} from '@lingui/macro'
+import {useNavigation} from '@react-navigation/core'
+
+import {FEEDBACK_FORM_URL, HELP_DESK_URL} from '#/lib/constants'
+import {useKawaiiMode} from '#/state/preferences/kawaii'
 import {useSession} from '#/state/session'
-import {useInviteCodesQuery} from '#/state/queries/invites'
+import {DesktopFeeds} from '#/view/shell/desktop/Feeds'
+import {DesktopSearch} from '#/view/shell/desktop/Search'
+import {SidebarTrendingTopics} from '#/view/shell/desktop/SidebarTrendingTopics'
+import {
+  atoms as a,
+  useGutters,
+  useLayoutBreakpoints,
+  useTheme,
+  web,
+} from '#/alf'
+import {AppLanguageDropdown} from '#/components/AppLanguageDropdown'
+import {Divider} from '#/components/Divider'
+import {InlineLinkText} from '#/components/Link'
+import {ProgressGuideList} from '#/components/ProgressGuide/List'
+import {Text} from '#/components/Typography'
+
+function useWebQueryParams() {
+  const navigation = useNavigation()
+  const [params, setParams] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    return navigation.addListener('state', e => {
+      try {
+        const {state} = e.data
+        const lastRoute = state.routes[state.routes.length - 1]
+        setParams(lastRoute.params)
+      } catch (err) {}
+    })
+  }, [navigation, setParams])
+
+  return params
+}
 
 export function DesktopRightNav({routeName}: {routeName: string}) {
-  const pal = usePalette('default')
-  const palError = usePalette('error')
+  const t = useTheme()
   const {_} = useLingui()
-  const {isSandbox, hasSession, currentAccount} = useSession()
+  const {hasSession, currentAccount} = useSession()
+  const kawaii = useKawaiiMode()
+  const gutters = useGutters(['base', 0, 'base', 'wide'])
+  const isSearchScreen = routeName === 'Search'
+  const webqueryParams = useWebQueryParams()
+  const searchQuery = webqueryParams?.q
+  const showTrending = !isSearchScreen || (isSearchScreen && !!searchQuery)
+  const {rightNavVisible, centerColumnOffset, leftNavMinimal} =
+    useLayoutBreakpoints()
 
-  const {isTablet} = useWebMediaQueries()
-  if (isTablet) {
+  if (!rightNavVisible) {
     return null
   }
 
   return (
-    <View style={[styles.rightNav, pal.view]}>
-      <View style={{paddingVertical: 20}}>
-        {routeName === 'Search' ? (
-          <View style={{marginBottom: 18}}>
-            <DesktopFeeds />
-          </View>
-        ) : (
-          <>
-            <DesktopSearch />
+    <View
+      style={[
+        gutters,
+        a.gap_lg,
+        web({
+          position: 'fixed',
+          left: '50%',
+          transform: [
+            {translateX: centerColumnOffset ? 150 : 300},
+            ...a.scrollbar_offset.transform,
+          ],
+          width: 300 + gutters.paddingLeft,
+          maxHeight: '100%',
+          overflowY: 'auto',
+        }),
+      ]}>
+      {!isSearchScreen && <DesktopSearch />}
 
-            {hasSession && (
-              <View style={[pal.border, styles.desktopFeedsContainer]}>
-                <DesktopFeeds />
-              </View>
-            )}
+      {hasSession && (
+        <>
+          <ProgressGuideList />
+          <DesktopFeeds />
+          <Divider />
+        </>
+      )}
+
+      {showTrending && <SidebarTrendingTopics />}
+
+      <Text style={[a.leading_snug, t.atoms.text_contrast_low]}>
+        {hasSession && (
+          <>
+            <InlineLinkText
+              to={FEEDBACK_FORM_URL({
+                email: currentAccount?.email,
+                handle: currentAccount?.handle,
+              })}
+              label={_(msg`Feedback`)}>
+              {_(msg`Feedback`)}
+            </InlineLinkText>
+            {' • '}
           </>
         )}
+        <InlineLinkText
+          to="https://bsky.social/about/support/privacy-policy"
+          label={_(msg`Privacy`)}>
+          {_(msg`Privacy`)}
+        </InlineLinkText>
+        {' • '}
+        <InlineLinkText
+          to="https://bsky.social/about/support/tos"
+          label={_(msg`Terms`)}>
+          {_(msg`Terms`)}
+        </InlineLinkText>
+        {' • '}
+        <InlineLinkText label={_(msg`Help`)} to={HELP_DESK_URL}>
+          {_(msg`Help`)}
+        </InlineLinkText>
+      </Text>
 
-        <View
-          style={[
-            styles.message,
-            {
-              paddingTop: hasSession ? 0 : 18,
-            },
-          ]}>
-          {isSandbox ? (
-            <View style={[palError.view, styles.messageLine, s.p10]}>
-              <Text type="md" style={[palError.text, s.bold]}>
-                <Trans>SANDBOX. Posts and accounts are not permanent.</Trans>
-              </Text>
-            </View>
-          ) : undefined}
-          <View style={[{flexWrap: 'wrap'}, s.flexRow]}>
-            {hasSession && (
-              <>
-                <TextLink
-                  type="md"
-                  style={pal.link}
-                  href={FEEDBACK_FORM_URL({
-                    email: currentAccount?.email,
-                    handle: currentAccount?.handle,
-                  })}
-                  text={_(msg`Feedback`)}
-                />
-                <Text type="md" style={pal.textLight}>
-                  &nbsp;&middot;&nbsp;
-                </Text>
-              </>
-            )}
-            <TextLink
-              type="md"
-              style={pal.link}
-              href="https://blueskyweb.xyz/support/privacy-policy"
-              text={_(msg`Privacy`)}
-            />
-            <Text type="md" style={pal.textLight}>
-              &nbsp;&middot;&nbsp;
-            </Text>
-            <TextLink
-              type="md"
-              style={pal.link}
-              href="https://blueskyweb.xyz/support/tos"
-              text={_(msg`Terms`)}
-            />
-            <Text type="md" style={pal.textLight}>
-              &nbsp;&middot;&nbsp;
-            </Text>
-            <TextLink
-              type="md"
-              style={pal.link}
-              href={HELP_DESK_URL}
-              text={_(msg`Help`)}
-            />
-          </View>
+      {kawaii && (
+        <Text style={[t.atoms.text_contrast_medium, {marginTop: 12}]}>
+          <Trans>
+            Logo by{' '}
+            <InlineLinkText
+              label={_(msg`Logo by @sawaratsuki.bsky.social`)}
+              to="/profile/sawaratsuki.bsky.social">
+              @sawaratsuki.bsky.social
+            </InlineLinkText>
+          </Trans>
+        </Text>
+      )}
+
+      {!hasSession && leftNavMinimal && (
+        <View style={[a.w_full, {height: 32}]}>
+          <AppLanguageDropdown style={{marginTop: 0}} />
         </View>
-
-        {hasSession && <InviteCodes />}
-      </View>
+      )}
     </View>
   )
 }
-
-function InviteCodes() {
-  const pal = usePalette('default')
-  const {openModal} = useModalControls()
-  const {data: invites} = useInviteCodesQuery()
-  const invitesAvailable = invites?.available?.length ?? 0
-  const {_} = useLingui()
-
-  const onPress = React.useCallback(() => {
-    openModal({name: 'invite-codes'})
-  }, [openModal])
-
-  if (!invites) {
-    return null
-  }
-
-  if (invites?.disabled) {
-    return (
-      <View style={[styles.inviteCodes, pal.border]}>
-        <FontAwesomeIcon
-          icon="ticket"
-          style={[styles.inviteCodesIcon, pal.textLight]}
-          size={16}
-        />
-        <Text type="md-medium" style={pal.textLight}>
-          <Trans>
-            Your invite codes are hidden when logged in using an App Password
-          </Trans>
-        </Text>
-      </View>
-    )
-  }
-
-  return (
-    <TouchableOpacity
-      style={[styles.inviteCodes, pal.border]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={_(
-        plural(invitesAvailable, {
-          one: 'Invite codes: # available',
-          other: 'Invite codes: # available',
-        }),
-      )}
-      accessibilityHint={_(msg`Opens list of invite codes`)}>
-      <FontAwesomeIcon
-        icon="ticket"
-        style={[
-          styles.inviteCodesIcon,
-          invitesAvailable > 0 ? pal.link : pal.textLight,
-        ]}
-        size={16}
-      />
-      <Text
-        type="md-medium"
-        style={invitesAvailable > 0 ? pal.link : pal.textLight}>
-        <Plural
-          value={formatCount(invitesAvailable)}
-          one="# invite code available"
-          other="# invite codes available"
-        />
-      </Text>
-    </TouchableOpacity>
-  )
-}
-
-const styles = StyleSheet.create({
-  rightNav: {
-    // @ts-ignore web only
-    position: 'fixed',
-    // @ts-ignore web only
-    left: 'calc(50vw + 300px + 20px)',
-    width: 300,
-    maxHeight: '100%',
-    overflowY: 'auto',
-  },
-
-  message: {
-    paddingVertical: 18,
-    paddingHorizontal: 12,
-  },
-  messageLine: {
-    marginBottom: 10,
-  },
-
-  inviteCodes: {
-    borderTopWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    flexDirection: 'row',
-  },
-  inviteCodesIcon: {
-    marginTop: 2,
-    marginRight: 6,
-    flexShrink: 0,
-  },
-  desktopFeedsContainer: {
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    marginTop: 18,
-    marginBottom: 18,
-  },
-})

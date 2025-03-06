@@ -1,31 +1,28 @@
 import React from 'react'
-import {View} from 'react-native'
+import {ScrollView, View} from 'react-native'
 import {useSafeAreaInsets} from 'react-native-safe-area-context'
-import {useLingui} from '@lingui/react'
 import {msg} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
 
-import {IS_DEV} from '#/env'
 import {isWeb} from '#/platform/detection'
 import {useOnboardingDispatch} from '#/state/shell'
-
-import {
-  useTheme,
-  atoms as a,
-  useBreakpoints,
-  web,
-  native,
-  flatten,
-  TextStyleProp,
-} from '#/alf'
-import {H2, P, leading} from '#/components/Typography'
-import {ChevronLeft_Stroke2_Corner0_Rounded as ChevronLeft} from '#/components/icons/Chevron'
-import {Button, ButtonIcon} from '#/components/Button'
-import {ScrollView} from '#/view/com/util/Views'
-import {createPortalGroup} from '#/components/Portal'
-
 import {Context} from '#/screens/Onboarding/state'
+import {
+  atoms as a,
+  flatten,
+  native,
+  TextStyleProp,
+  useBreakpoints,
+  useTheme,
+  web,
+} from '#/alf'
+import {leading} from '#/alf/typography'
+import {Button, ButtonIcon, ButtonText} from '#/components/Button'
+import {ChevronLeft_Stroke2_Corner0_Rounded as ChevronLeft} from '#/components/icons/Chevron'
+import {createPortalGroup} from '#/components/Portal'
+import {P, Text} from '#/components/Typography'
 
-const COL_WIDTH = 500
+const COL_WIDTH = 420
 
 export const OnboardingControls = createPortalGroup()
 
@@ -56,9 +53,7 @@ export function Layout({children}: React.PropsWithChildren<{}>) {
       aria-role="dialog"
       aria-label={dialogLabel}
       accessibilityLabel={dialogLabel}
-      accessibilityHint={_(
-        msg`The following steps will help customize your Bluesky experience.`,
-      )}
+      accessibilityHint={_(msg`Customizes your Bluesky experience`)}
       style={[
         // @ts-ignore web only -prf
         isWeb ? a.fixed : a.absolute,
@@ -66,7 +61,7 @@ export function Layout({children}: React.PropsWithChildren<{}>) {
         a.flex_1,
         t.atoms.bg,
       ]}>
-      {IS_DEV && (
+      {__DEV__ && (
         <View style={[a.absolute, a.p_xl, a.z_10, {right: 0, top: insets.top}]}>
           <Button
             variant="ghost"
@@ -75,7 +70,7 @@ export function Layout({children}: React.PropsWithChildren<{}>) {
             onPress={() => onboardDispatch({type: 'skip'})}
             // DEV ONLY
             label="Clear onboarding state">
-            Clear
+            <ButtonText>Clear</ButtonText>
           </Button>
         </View>
       )}
@@ -154,7 +149,7 @@ export function Layout({children}: React.PropsWithChildren<{}>) {
               {children}
             </View>
 
-            <View style={{height: 200}} />
+            <View style={{height: 400}} />
           </View>
         </View>
       </ScrollView>
@@ -204,25 +199,27 @@ export function Layout({children}: React.PropsWithChildren<{}>) {
   )
 }
 
-export function Title({
+export function TitleText({
   children,
   style,
 }: React.PropsWithChildren<TextStyleProp>) {
   return (
-    <H2
+    <Text
       style={[
         a.pb_sm,
+        a.text_4xl,
+        a.font_bold,
         {
           lineHeight: leading(a.text_4xl, a.leading_tight),
         },
         flatten(style),
       ]}>
       {children}
-    </H2>
+    </Text>
   )
 }
 
-export function Description({
+export function DescriptionText({
   children,
   style,
 }: React.PropsWithChildren<TextStyleProp>) {

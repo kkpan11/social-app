@@ -1,33 +1,41 @@
-import React from 'react'
 import {StyleProp, TextStyle, View} from 'react-native'
-import {AppBskyActorDefs} from '@atproto/api'
+import {msg} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
+
+import {Shadow} from '#/state/cache/types'
+import {useProfileFollowMutationQueue} from '#/state/queries/profile'
+import * as bsky from '#/types/bsky'
 import {Button, ButtonType} from '../util/forms/Button'
 import * as Toast from '../util/Toast'
-import {useProfileFollowMutationQueue} from '#/state/queries/profile'
-import {Shadow} from '#/state/cache/types'
-import {useLingui} from '@lingui/react'
-import {msg} from '@lingui/macro'
 
 export function FollowButton({
   unfollowedType = 'inverted',
   followedType = 'default',
   profile,
   labelStyle,
+  logContext,
+  onFollow,
 }: {
   unfollowedType?: ButtonType
   followedType?: ButtonType
-  profile: Shadow<AppBskyActorDefs.ProfileViewBasic>
+  profile: Shadow<bsky.profile.AnyProfileView>
   labelStyle?: StyleProp<TextStyle>
+  logContext: 'ProfileCard' | 'StarterPackProfilesList'
+  onFollow?: () => void
 }) {
-  const [queueFollow, queueUnfollow] = useProfileFollowMutationQueue(profile)
+  const [queueFollow, queueUnfollow] = useProfileFollowMutationQueue(
+    profile,
+    logContext,
+  )
   const {_} = useLingui()
 
   const onPressFollow = async () => {
     try {
       await queueFollow()
+      onFollow?.()
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
-        Toast.show(_(msg`An issue occurred, please try again.`))
+        Toast.show(_(msg`An issue occurred, please try again.`), 'xmark')
       }
     }
   }
@@ -37,7 +45,7 @@ export function FollowButton({
       await queueUnfollow()
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
-        Toast.show(_(msg`An issue occurred, please try again.`))
+        Toast.show(_(msg`An issue occurred, please try again.`), 'xmark')
       }
     }
   }
@@ -55,13 +63,22 @@ export function FollowButton({
         label={_(msg({message: 'Unfollow', context: 'action'}))}
       />
     )
-  } else {
+  } else if (!profile.viewer.followedBy) {
     return (
       <Button
         type={unfollowedType}
         labelStyle={labelStyle}
         onPress={onPressFollow}
         label={_(msg({message: 'Follow', context: 'action'}))}
+      />
+    )
+  } else {
+    return (
+      <Button
+        type={unfollowedType}
+        labelStyle={labelStyle}
+        onPress={onPressFollow}
+        label={_(msg({message: 'Follow Back', context: 'action'}))}
       />
     )
   }

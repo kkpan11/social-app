@@ -1,7 +1,8 @@
 import React from 'react'
-import {flushSync} from 'react-dom'
 import {View} from 'react-native'
-import {s} from 'lib/styles'
+import {flushSync} from 'react-dom'
+
+import {s} from '#/lib/styles'
 
 export interface RenderTabBarFnProps {
   selectedPage: number
@@ -14,7 +15,6 @@ interface Props {
   initialPage?: number
   renderTabBar: RenderTabBarFn
   onPageSelected?: (index: number) => void
-  onPageSelecting?: (index: number) => void
 }
 export const Pager = React.forwardRef(function PagerImpl(
   {
@@ -22,7 +22,6 @@ export const Pager = React.forwardRef(function PagerImpl(
     initialPage = 0,
     renderTabBar,
     onPageSelected,
-    onPageSelecting,
   }: React.PropsWithChildren<Props>,
   ref,
 ) {
@@ -31,7 +30,9 @@ export const Pager = React.forwardRef(function PagerImpl(
   const anchorRef = React.useRef(null)
 
   React.useImperativeHandle(ref, () => ({
-    setPage: (index: number) => onTabBarSelect(index),
+    setPage: (index: number) => {
+      onTabBarSelect(index)
+    },
   }))
 
   const onTabBarSelect = React.useCallback(
@@ -54,7 +55,6 @@ export const Pager = React.forwardRef(function PagerImpl(
       flushSync(() => {
         setSelectedPage(index)
         onPageSelected?.(index)
-        onPageSelecting?.(index)
       })
       if (isSticking) {
         const restoredScrollY = scrollYs.current[index]
@@ -65,7 +65,7 @@ export const Pager = React.forwardRef(function PagerImpl(
         }
       }
     },
-    [selectedPage, setSelectedPage, onPageSelected, onPageSelecting],
+    [selectedPage, setSelectedPage, onPageSelected],
   )
 
   return (
@@ -73,7 +73,7 @@ export const Pager = React.forwardRef(function PagerImpl(
       {renderTabBar({
         selectedPage,
         tabBarAnchor: <View ref={anchorRef} />,
-        onSelect: onTabBarSelect,
+        onSelect: e => onTabBarSelect(e),
       })}
       {React.Children.map(children, (child, i) => (
         <View style={selectedPage === i ? s.flex1 : s.hidden} key={`page-${i}`}>

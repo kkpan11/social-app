@@ -13,9 +13,14 @@ build-web: ## Compile web bundle, copy to bskyweb directory
 	yarn intl:build
 	yarn build-web
 
+.PHONY: build-web-embed
+build-web-embed: ## Compile web embed bundle, copy to bskyweb/embedr* directories
+	yarn intl:build
+	yarn build-embed
+
 .PHONY: test
 test: ## Run all tests
-	NODE_ENV=test EXPO_PUBLIC_ENV=test yarn test
+	NODE_ENV=test yarn test
 
 .PHONY: lint
 lint: ## Run style checks and verify syntax
@@ -28,9 +33,10 @@ lint: ## Run style checks and verify syntax
 .PHONY: deps
 deps: ## Installs dependent libs using 'yarn install'
 	yarn install --frozen-lockfile
+	cd bskyembed && yarn install --frozen-lockfile
 
 .PHONY: nvm-setup
 nvm-setup: ## Use NVM to install and activate node+yarn
-	nvm install 18
-	nvm use 18
+	nvm install 20
+	nvm use 20
 	npm install --global yarn

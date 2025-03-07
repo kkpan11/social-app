@@ -1,27 +1,29 @@
-import React, {useCallback, useMemo} from 'react'
-import {StyleSheet, Keyboard} from 'react-native'
+import {useCallback, useMemo} from 'react'
+import {Keyboard, StyleSheet} from 'react-native'
 import {
   FontAwesomeIcon,
   FontAwesomeIconStyle,
 } from '@fortawesome/react-native-fontawesome'
-import {Text} from 'view/com/util/text/Text'
+import {msg} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
+
+import {LANG_DROPDOWN_HITSLOP} from '#/lib/constants'
+import {usePalette} from '#/lib/hooks/usePalette'
+import {isNative} from '#/platform/detection'
+import {useModalControls} from '#/state/modals'
+import {
+  hasPostLanguage,
+  toPostLanguages,
+  useLanguagePrefs,
+  useLanguagePrefsApi,
+} from '#/state/preferences/languages'
 import {
   DropdownButton,
   DropdownItem,
   DropdownItemButton,
-} from 'view/com/util/forms/DropdownButton'
-import {usePalette} from 'lib/hooks/usePalette'
-import {isNative} from 'platform/detection'
+} from '#/view/com/util/forms/DropdownButton'
+import {Text} from '#/view/com/util/text/Text'
 import {codeToLanguageName} from '../../../../locale/helpers'
-import {useModalControls} from '#/state/modals'
-import {
-  useLanguagePrefs,
-  useLanguagePrefsApi,
-  toPostLanguages,
-  hasPostLanguage,
-} from '#/state/preferences/languages'
-import {t, msg} from '@lingui/macro'
-import {useLingui} from '@lingui/react'
 
 export function SelectLangBtn() {
   const pal = usePalette('default')
@@ -46,7 +48,7 @@ export function SelectLangBtn() {
     function add(commaSeparatedLangCodes: string) {
       const langCodes = commaSeparatedLangCodes.split(',')
       const langName = langCodes
-        .map(code => codeToLanguageName(code))
+        .map(code => codeToLanguageName(code, langPrefs.appLanguage))
         .join(' + ')
 
       /*
@@ -84,15 +86,15 @@ export function SelectLangBtn() {
     }
 
     return [
-      {heading: true, label: t`Post language`},
+      {heading: true, label: _(msg`Post language`)},
       ...arr.slice(0, 6),
       {sep: true},
       {
-        label: t`Other...`,
+        label: _(msg`Other...`),
         onPress: onPressMore,
       },
     ]
-  }, [onPressMore, langPrefs, setLangPrefs, postLanguagesPref])
+  }, [onPressMore, langPrefs, setLangPrefs, postLanguagesPref, _])
 
   return (
     <DropdownButton
@@ -101,11 +103,14 @@ export function SelectLangBtn() {
       items={items}
       openUpwards
       style={styles.button}
+      hitSlop={LANG_DROPDOWN_HITSLOP}
       accessibilityLabel={_(msg`Language selection`)}
       accessibilityHint="">
       {postLanguagesPref.length > 0 ? (
         <Text type="lg-bold" style={[pal.link, styles.label]} numberOfLines={1}>
-          {postLanguagesPref.map(lang => codeToLanguageName(lang)).join(', ')}
+          {postLanguagesPref
+            .map(lang => codeToLanguageName(lang, langPrefs.appLanguage))
+            .join(', ')}
         </Text>
       ) : (
         <FontAwesomeIcon
@@ -120,7 +125,7 @@ export function SelectLangBtn() {
 
 const styles = StyleSheet.create({
   button: {
-    paddingHorizontal: 15,
+    marginHorizontal: 15,
   },
   label: {
     maxWidth: 100,

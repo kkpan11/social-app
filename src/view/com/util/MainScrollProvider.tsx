@@ -1,11 +1,12 @@
 import React, {useCallback, useEffect} from 'react'
-import EventEmitter from 'eventemitter3'
-import {ScrollProvider} from '#/lib/ScrollContext'
 import {NativeScrollEvent} from 'react-native'
-import {useSetMinimalShellMode, useMinimalShellMode} from '#/state/shell'
+import {interpolate, useSharedValue, withSpring} from 'react-native-reanimated'
+import EventEmitter from 'eventemitter3'
+
+import {ScrollProvider} from '#/lib/ScrollContext'
+import {isNative, isWeb} from '#/platform/detection'
+import {useMinimalShellMode} from '#/state/shell'
 import {useShellLayout} from '#/state/shell/shell-layout'
-import {isNative, isWeb} from 'platform/detection'
-import {useSharedValue, interpolate} from 'react-native-reanimated'
 
 const WEB_HIDE_SHELL_THRESHOLD = 200
 
@@ -16,55 +17,105 @@ function clamp(num: number, min: number, max: number) {
 
 export function MainScrollProvider({children}: {children: React.ReactNode}) {
   const {headerHeight} = useShellLayout()
-  const mode = useMinimalShellMode()
-  const setMode = useSetMinimalShellMode()
+  const {headerMode} = useMinimalShellMode()
   const startDragOffset = useSharedValue<number | null>(null)
   const startMode = useSharedValue<number | null>(null)
+  const didJustRestoreScroll = useSharedValue<boolean>(false)
+
+  const setMode = React.useCallback(
+    (v: boolean) => {
+      'worklet'
+      headerMode.set(() =>
+        withSpring(v ? 1 : 0, {
+          overshootClamping: true,
+        }),
+      )
+    },
+    [headerMode],
+  )
 
   useEffect(() => {
     if (isWeb) {
       return listenToForcedWindowScroll(() => {
-        startDragOffset.value = null
-        startMode.value = null
+        startDragOffset.set(null)
+        startMode.set(null)
+        didJustRestoreScroll.set(true)
       })
     }
   })
 
+  const snapToClosestState = useCallback(
+    (e: NativeScrollEvent) => {
+      'worklet'
+      const offsetY = Math.max(0, e.contentOffset.y)
+      if (isNative) {
+        const startDragOffsetValue = startDragOffset.get()
+        if (startDragOffsetValue === null) {
+          return
+        }
+        const didScrollDown = offsetY > startDragOffsetValue
+        startDragOffset.set(null)
+        startMode.set(null)
+        if (offsetY < headerHeight.get()) {
+          // If we're close to the top, show the shell.
+          setMode(false)
+        } else if (didScrollDown) {
+          // Showing the bar again on scroll down feels annoying, so don't.
+          setMode(true)
+        } else {
+          // Snap to whichever state is the closest.
+          setMode(Math.round(headerMode.get()) === 1)
+        }
+      }
+    },
+    [startDragOffset, startMode, setMode, headerMode, headerHeight],
+  )
+
   const onBeginDrag = useCallback(
     (e: NativeScrollEvent) => {
       'worklet'
+      const offsetY = Math.max(0, e.contentOffset.y)
       if (isNative) {
-        startDragOffset.value = e.contentOffset.y
-        startMode.value = mode.value
+        startDragOffset.set(offsetY)
+        startMode.set(headerMode.get())
       }
     },
-    [mode, startDragOffset, startMode],
+    [headerMode, startDragOffset, startMode],
   )
 
   const onEndDrag = useCallback(
     (e: NativeScrollEvent) => {
       'worklet'
       if (isNative) {
-        startDragOffset.value = null
-        startMode.value = null
-        if (e.contentOffset.y < headerHeight.value / 2) {
-          // If we're close to the top, show the shell.
-          setMode(false)
-        } else {
-          // Snap to whichever state is the closest.
-          setMode(Math.round(mode.value) === 1)
+        if (e.velocity && e.velocity.y !== 0) {
+          // If we detect a velocity, wait for onMomentumEnd to snap.
+          return
         }
+        snapToClosestState(e)
       }
     },
-    [startDragOffset, startMode, setMode, mode, headerHeight],
+    [snapToClosestState],
+  )
+
+  const onMomentumEnd = useCallback(
+    (e: NativeScrollEvent) => {
+      'worklet'
+      if (isNative) {
+        snapToClosestState(e)
+      }
+    },
+    [snapToClosestState],
   )
 
   const onScroll = useCallback(
     (e: NativeScrollEvent) => {
       'worklet'
+      const offsetY = Math.max(0, e.contentOffset.y)
       if (isNative) {
-        if (startDragOffset.value === null || startMode.value === null) {
-          if (mode.value !== 0 && e.contentOffset.y < headerHeight.value) {
+        const startDragOffsetValue = startDragOffset.get()
+        const startModeValue = startMode.get()
+        if (startDragOffsetValue === null || startModeValue === null) {
+          if (headerMode.get() !== 0 && offsetY < headerHeight.get()) {
             // If we're close enough to the top, always show the shell.
             // Even if we're not dragging.
             setMode(false)
@@ -74,38 +125,51 @@ export function MainScrollProvider({children}: {children: React.ReactNode}) {
 
         // The "mode" value is always between 0 and 1.
         // Figure out how much to move it based on the current dragged distance.
-        const dy = e.contentOffset.y - startDragOffset.value
+        const dy = offsetY - startDragOffsetValue
         const dProgress = interpolate(
           dy,
-          [-headerHeight.value, headerHeight.value],
+          [-headerHeight.get(), headerHeight.get()],
           [-1, 1],
         )
-        const newValue = clamp(startMode.value + dProgress, 0, 1)
-        if (newValue !== mode.value) {
+        const newValue = clamp(startModeValue + dProgress, 0, 1)
+        if (newValue !== headerMode.get()) {
           // Manually adjust the value. This won't be (and shouldn't be) animated.
-          mode.value = newValue
+          headerMode.set(newValue)
         }
       } else {
+        if (didJustRestoreScroll.get()) {
+          didJustRestoreScroll.set(false)
+          // Don't hide/show navbar based on scroll restoratoin.
+          return
+        }
         // On the web, we don't try to follow the drag because we don't know when it ends.
         // Instead, show/hide immediately based on whether we're scrolling up or down.
-        const dy = e.contentOffset.y - (startDragOffset.value ?? 0)
-        startDragOffset.value = e.contentOffset.y
+        const dy = offsetY - (startDragOffset.get() ?? 0)
+        startDragOffset.set(offsetY)
 
-        if (dy < 0 || e.contentOffset.y < WEB_HIDE_SHELL_THRESHOLD) {
+        if (dy < 0 || offsetY < WEB_HIDE_SHELL_THRESHOLD) {
           setMode(false)
         } else if (dy > 0) {
           setMode(true)
         }
       }
     },
-    [headerHeight, mode, setMode, startDragOffset, startMode],
+    [
+      headerHeight,
+      headerMode,
+      setMode,
+      startDragOffset,
+      startMode,
+      didJustRestoreScroll,
+    ],
   )
 
   return (
     <ScrollProvider
       onBeginDrag={onBeginDrag}
       onEndDrag={onEndDrag}
-      onScroll={onScroll}>
+      onScroll={onScroll}
+      onMomentumEnd={onMomentumEnd}>
       {children}
     </ScrollProvider>
   )

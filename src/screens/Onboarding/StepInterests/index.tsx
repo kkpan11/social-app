@@ -1,50 +1,54 @@
 import React from 'react'
 import {View} from 'react-native'
-import {useLingui} from '@lingui/react'
 import {msg, Trans} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
 import {useQuery} from '@tanstack/react-query'
 
-import {logger} from '#/logger'
-import {atoms as a, useBreakpoints, useTheme} from '#/alf'
-import {ChevronRight_Stroke2_Corner0_Rounded as ChevronRight} from '#/components/icons/Chevron'
-import {Hashtag_Stroke2_Corner0_Rounded as Hashtag} from '#/components/icons/Hashtag'
-import {EmojiSad_Stroke2_Corner0_Rounded as EmojiSad} from '#/components/icons/Emoji'
-import {ArrowRotateCounterClockwise_Stroke2_Corner0_Rounded as ArrowRotateCounterClockwise} from '#/components/icons/ArrowRotateCounterClockwise'
-import {Button, ButtonIcon, ButtonText} from '#/components/Button'
-import {Loader} from '#/components/Loader'
-import * as Toggle from '#/components/forms/Toggle'
-import {getAgent} from '#/state/session'
-import {useAnalytics} from '#/lib/analytics/analytics'
-import {Text} from '#/components/Typography'
-import {useOnboardingDispatch} from '#/state/shell'
+import {logEvent} from '#/lib/statsig/statsig'
 import {capitalize} from '#/lib/strings/capitalize'
-
-import {Context, ApiResponseMap} from '#/screens/Onboarding/state'
+import {logger} from '#/logger'
+import {useAgent} from '#/state/session'
+import {useOnboardingDispatch} from '#/state/shell'
 import {
-  Title,
-  Description,
+  DescriptionText,
   OnboardingControls,
+  TitleText,
 } from '#/screens/Onboarding/Layout'
+import {
+  ApiResponseMap,
+  Context,
+  useInterestsDisplayNames,
+} from '#/screens/Onboarding/state'
 import {InterestButton} from '#/screens/Onboarding/StepInterests/InterestButton'
-import {IconCircle} from '#/screens/Onboarding/IconCircle'
+import {atoms as a, useBreakpoints, useTheme} from '#/alf'
+import {Button, ButtonIcon, ButtonText} from '#/components/Button'
+import * as Toggle from '#/components/forms/Toggle'
+import {IconCircle} from '#/components/IconCircle'
+import {ArrowRotateCounterClockwise_Stroke2_Corner0_Rounded as ArrowRotateCounterClockwise} from '#/components/icons/ArrowRotateCounterClockwise'
+import {ChevronRight_Stroke2_Corner0_Rounded as ChevronRight} from '#/components/icons/Chevron'
+import {EmojiSad_Stroke2_Corner0_Rounded as EmojiSad} from '#/components/icons/Emoji'
+import {Hashtag_Stroke2_Corner0_Rounded as Hashtag} from '#/components/icons/Hashtag'
+import {Loader} from '#/components/Loader'
+import {Text} from '#/components/Typography'
 
 export function StepInterests() {
   const {_} = useLingui()
   const t = useTheme()
-  const {track} = useAnalytics()
   const {gtMobile} = useBreakpoints()
-  const {state, dispatch, interestsDisplayNames} = React.useContext(Context)
+  const interestsDisplayNames = useInterestsDisplayNames()
+
+  const {state, dispatch} = React.useContext(Context)
   const [saving, setSaving] = React.useState(false)
   const [interests, setInterests] = React.useState<string[]>(
     state.interestsStepResults.selectedInterests.map(i => i),
   )
   const onboardDispatch = useOnboardingDispatch()
+  const agent = useAgent()
   const {isLoading, isError, error, data, refetch, isFetching} = useQuery({
     queryKey: ['interests'],
     queryFn: async () => {
       try {
-        const {data} =
-          await getAgent().app.bsky.unspecced.getTaggedSuggestions()
+        const {data} = await agent.app.bsky.unspecced.getTaggedSuggestions()
         return data.suggestions.reduce(
           (agg, s) => {
             const {tag, subject, subjectType} = s
@@ -84,7 +88,6 @@ export function StepInterests() {
           `onboarding: getTaggedSuggestions fetch or processing failed`,
         )
         logger.error(e)
-        track('OnboardingV2:StepInterests:Error')
 
         throw new Error(`a network error occurred`)
       }
@@ -102,8 +105,7 @@ export function StepInterests() {
         selectedInterests: interests,
       })
       dispatch({type: 'next'})
-
-      track('OnboardingV2:StepInterests:End', {
+      logEvent('onboarding:interests:nextPressed', {
         selectedInterests: interests,
         selectedInterestsLength: interests.length,
       })
@@ -111,18 +113,12 @@ export function StepInterests() {
       logger.info(`onboading: error saving interests`)
       logger.error(e)
     }
-  }, [interests, data, setSaving, dispatch, track])
+  }, [interests, data, setSaving, dispatch])
 
   const skipOnboarding = React.useCallback(() => {
     onboardDispatch({type: 'finish'})
     dispatch({type: 'finish'})
-    track('OnboardingV2:Skip')
-  }, [onboardDispatch, dispatch, track])
-
-  React.useEffect(() => {
-    track('OnboardingV2:Begin')
-    track('OnboardingV2:StepInterests:Start')
-  }, [track])
+  }, [onboardDispatch, dispatch])
 
   const title = isError ? (
     <Trans>Oh no! Something went wrong.</Trans>
@@ -139,7 +135,7 @@ export function StepInterests() {
   )
 
   return (
-    <View style={[a.align_start]}>
+    <View style={[a.align_start]} testID="onboardingInterests">
       <IconCircle
         icon={isError ? EmojiSad : Hashtag}
         style={[
@@ -159,8 +155,8 @@ export function StepInterests() {
         ]}
       />
 
-      <Title>{title}</Title>
-      <Description>{description}</Description>
+      <TitleText>{title}</TitleText>
+      <DescriptionText>{description}</DescriptionText>
 
       <View style={[a.w_full, a.pt_2xl]}>
         {isLoading ? (
@@ -184,9 +180,9 @@ export function StepInterests() {
                     color: t.palette.negative_900,
                   },
                 ]}>
-                Error:{' '}
+                <Trans>Error:</Trans>{' '}
               </Text>
-              {error?.message || 'an unknown error occurred'}
+              {error?.message || _(msg`an unknown error occurred`)}
             </Text>
           </View>
         ) : (

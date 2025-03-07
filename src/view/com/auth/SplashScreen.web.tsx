@@ -1,17 +1,24 @@
 import React from 'react'
-import {StyleSheet, TouchableOpacity, View, Pressable} from 'react-native'
+import {Pressable, View} from 'react-native'
 import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome'
-import {Text} from 'view/com/util/text/Text'
-import {TextLink} from '../util/Link'
-import {ErrorBoundary} from 'view/com/util/ErrorBoundary'
-import {s, colors} from 'lib/styles'
-import {usePalette} from 'lib/hooks/usePalette'
-import {CenteredView} from '../util/Views'
-import {isWeb} from 'platform/detection'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {Trans} from '@lingui/macro'
+import {msg, Trans} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
+
+import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
+import {useKawaiiMode} from '#/state/preferences/kawaii'
+import {ErrorBoundary} from '#/view/com/util/ErrorBoundary'
 import {Logo} from '#/view/icons/Logo'
 import {Logotype} from '#/view/icons/Logotype'
+import {
+  AppClipOverlay,
+  postAppClipMessage,
+} from '#/screens/StarterPack/StarterPackLandingScreen'
+import {atoms as a, useTheme} from '#/alf'
+import {AppLanguageDropdown} from '#/components/AppLanguageDropdown'
+import {Button, ButtonText} from '#/components/Button'
+import * as Layout from '#/components/Layout'
+import {InlineLinkText} from '#/components/Link'
+import {Text} from '#/components/Typography'
 
 export const SplashScreen = ({
   onDismiss,
@@ -22,10 +29,23 @@ export const SplashScreen = ({
   onPressSignin: () => void
   onPressCreateAccount: () => void
 }) => {
-  const pal = usePalette('default')
-  const {isTabletOrMobile} = useWebMediaQueries()
-  const styles = useStyles()
-  const isMobileWeb = isWeb && isTabletOrMobile
+  const {_} = useLingui()
+  const t = useTheme()
+  const {isTabletOrMobile: isMobileWeb} = useWebMediaQueries()
+  const [showClipOverlay, setShowClipOverlay] = React.useState(false)
+
+  React.useEffect(() => {
+    const getParams = new URLSearchParams(window.location.search)
+    const clip = getParams.get('clip')
+    if (clip === 'true') {
+      setShowClipOverlay(true)
+      postAppClipMessage({
+        action: 'present',
+      })
+    }
+  }, [])
+
+  const kawaii = useKawaiiMode()
 
   return (
     <>
@@ -44,153 +64,125 @@ export const SplashScreen = ({
             icon="x"
             size={24}
             style={{
-              color: String(pal.text.color),
+              color: String(t.atoms.text.color),
             }}
           />
         </Pressable>
       )}
 
-      <CenteredView style={[styles.container, pal.view]}>
+      <Layout.Center style={[a.h_full, a.flex_1]} ignoreTabletLayoutOffset>
         <View
           testID="noSessionView"
           style={[
-            styles.containerInner,
-            isMobileWeb && styles.containerInnerMobile,
-            pal.border,
-            {alignItems: 'center'},
+            a.h_full,
+            a.justify_center,
+            // @ts-expect-error web only
+            {paddingBottom: '20vh'},
+            isMobileWeb && a.pb_5xl,
+            t.atoms.border_contrast_medium,
+            a.align_center,
+            a.gap_5xl,
+            a.flex_1,
           ]}>
           <ErrorBoundary>
-            <Logo width={92} fill="sky" />
+            <View style={[a.justify_center, a.align_center]}>
+              <Logo width={kawaii ? 300 : 92} fill="sky" />
 
-            <View style={{paddingTop: 40, paddingBottom: 20}}>
-              <Logotype width={161} fill={pal.text.color} />
+              {!kawaii && (
+                <View style={[a.pb_sm, a.pt_5xl]}>
+                  <Logotype width={161} fill={t.atoms.text.color} />
+                </View>
+              )}
+
+              <Text
+                style={[a.text_md, a.font_bold, t.atoms.text_contrast_medium]}>
+                <Trans>What's up?</Trans>
+              </Text>
             </View>
 
-            <View testID="signinOrCreateAccount" style={styles.btns}>
-              <TouchableOpacity
+            <View
+              testID="signinOrCreateAccount"
+              style={[a.w_full, a.px_xl, a.gap_md, a.pb_2xl, {maxWidth: 320}]}>
+              <Button
                 testID="createAccountButton"
-                style={[styles.btn, {backgroundColor: colors.blue3}]}
                 onPress={onPressCreateAccount}
-                // TODO: web accessibility
-                accessibilityRole="button">
-                <Text style={[s.white, styles.btnLabel]}>
-                  <Trans>Create a new account</Trans>
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+                label={_(msg`Create new account`)}
+                accessibilityHint={_(
+                  msg`Opens flow to create a new Bluesky account`,
+                )}
+                size="large"
+                variant="solid"
+                color="primary">
+                <ButtonText>
+                  <Trans>Create account</Trans>
+                </ButtonText>
+              </Button>
+              <Button
                 testID="signInButton"
-                style={[styles.btn, pal.btn]}
                 onPress={onPressSignin}
-                // TODO: web accessibility
-                accessibilityRole="button">
-                <Text style={[pal.text, styles.btnLabel]}>
-                  <Trans>Sign In</Trans>
-                </Text>
-              </TouchableOpacity>
+                label={_(msg`Sign in`)}
+                accessibilityHint={_(
+                  msg`Opens flow to sign in to your existing Bluesky account`,
+                )}
+                size="large"
+                variant="solid"
+                color="secondary">
+                <ButtonText>
+                  <Trans>Sign in</Trans>
+                </ButtonText>
+              </Button>
             </View>
           </ErrorBoundary>
         </View>
-        <Footer styles={styles} />
-      </CenteredView>
+        <Footer />
+      </Layout.Center>
+      <AppClipOverlay
+        visible={showClipOverlay}
+        setIsVisible={setShowClipOverlay}
+      />
     </>
   )
 }
 
-function Footer({styles}: {styles: ReturnType<typeof useStyles>}) {
-  const pal = usePalette('default')
+function Footer() {
+  const t = useTheme()
+  const {_} = useLingui()
 
   return (
-    <View style={[styles.footer, pal.view, pal.border]}>
-      <TextLink
-        href="https://blueskyweb.xyz"
-        text="Business"
-        style={[styles.footerLink, pal.link]}
-      />
-      <TextLink
-        href="https://blueskyweb.xyz/blog"
-        text="Blog"
-        style={[styles.footerLink, pal.link]}
-      />
-      <TextLink
-        href="https://blueskyweb.xyz/join"
-        text="Jobs"
-        style={[styles.footerLink, pal.link]}
-      />
+    <View
+      style={[
+        a.absolute,
+        a.inset_0,
+        {top: 'auto'},
+        a.p_xl,
+        a.border_t,
+        a.flex_row,
+        a.flex_wrap,
+        a.gap_xl,
+        a.flex_1,
+        t.atoms.border_contrast_medium,
+      ]}>
+      <InlineLinkText
+        label={_(msg`Learn more about Bluesky`)}
+        to="https://bsky.social">
+        <Trans>Business</Trans>
+      </InlineLinkText>
+      <InlineLinkText
+        label={_(msg`Read the Bluesky blog`)}
+        to="https://bsky.social/about/blog">
+        <Trans>Blog</Trans>
+      </InlineLinkText>
+      <InlineLinkText
+        label={_(msg`See jobs at Bluesky`)}
+        to="https://bsky.social/about/join">
+        <Trans comment="Link to a page with job openings at Bluesky">
+          Jobs
+        </Trans>
+      </InlineLinkText>
+
+      <View style={a.flex_1} />
+
+      <AppLanguageDropdown />
     </View>
   )
-}
-const useStyles = () => {
-  return StyleSheet.create({
-    container: {
-      height: '100%',
-    },
-    containerInner: {
-      height: '100%',
-      justifyContent: 'center',
-      // @ts-ignore web only
-      paddingBottom: '20vh',
-      paddingHorizontal: 20,
-    },
-    containerInnerMobile: {
-      paddingBottom: 50,
-    },
-    title: {
-      textAlign: 'center',
-      color: colors.blue3,
-      fontSize: 68,
-      fontWeight: 'bold',
-      paddingBottom: 10,
-    },
-    titleMobile: {
-      textAlign: 'center',
-      color: colors.blue3,
-      fontSize: 58,
-      fontWeight: 'bold',
-    },
-    subtitle: {
-      textAlign: 'center',
-      color: colors.gray5,
-      fontSize: 52,
-      fontWeight: 'bold',
-      paddingBottom: 30,
-    },
-    subtitleMobile: {
-      textAlign: 'center',
-      color: colors.gray5,
-      fontSize: 42,
-      fontWeight: 'bold',
-      paddingBottom: 30,
-    },
-    btns: {
-      gap: 10,
-      justifyContent: 'center',
-      paddingBottom: 40,
-    },
-    btn: {
-      borderRadius: 30,
-      paddingHorizontal: 24,
-      paddingVertical: 12,
-      minWidth: 220,
-    },
-    btnLabel: {
-      textAlign: 'center',
-      fontSize: 18,
-    },
-    notice: {
-      paddingHorizontal: 40,
-      textAlign: 'center',
-    },
-    footer: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      bottom: 0,
-      padding: 20,
-      borderTopWidth: 1,
-      flexDirection: 'row',
-    },
-    footerLink: {
-      marginRight: 20,
-    },
-  })
 }

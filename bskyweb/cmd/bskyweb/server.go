@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/subtle"
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -29,24 +34,40 @@ import (
 )
 
 type Server struct {
-	echo     *echo.Echo
-	httpd    *http.Server
-	mailmodo *Mailmodo
-	xrpcc    *xrpc.Client
+	echo  *echo.Echo
+	httpd *http.Server
+	xrpcc *xrpc.Client
+	cfg   *Config
+
+	ipccClient http.Client
+}
+
+type Config struct {
+	debug         bool
+	httpAddress   string
+	appviewHost   string
+	ogcardHost    string
+	linkHost      string
+	ipccHost      string
+	staticCDNHost string
 }
 
 func serve(cctx *cli.Context) error {
 	debug := cctx.Bool("debug")
 	httpAddress := cctx.String("http-address")
 	appviewHost := cctx.String("appview-host")
-	mailmodoAPIKey := cctx.String("mailmodo-api-key")
-	mailmodoListName := cctx.String("mailmodo-list-name")
+	ogcardHost := cctx.String("ogcard-host")
+	linkHost := cctx.String("link-host")
+	ipccHost := cctx.String("ipcc-host")
+	basicAuthPassword := cctx.String("basic-auth-password")
+	corsOrigins := cctx.StringSlice("cors-allowed-origins")
+	staticCDNHost := cctx.String("static-cdn-host")
+	staticCDNHost = strings.TrimSuffix(staticCDNHost, "/")
+	canonicalInstance := cctx.Bool("bsky-canonical-instance")
+	robotsDisallowAll := cctx.Bool("robots-disallow-all")
 
 	// Echo
 	e := echo.New()
-
-	// Mailmodo client.
-	mailmodo := NewMailmodo(mailmodoAPIKey, mailmodoListName)
 
 	// create a new session (no auth)
 	xrpcc := &xrpc.Client{
@@ -77,9 +98,24 @@ func serve(cctx *cli.Context) error {
 	// server
 	//
 	server := &Server{
-		echo:     e,
-		mailmodo: mailmodo,
-		xrpcc:    xrpcc,
+		echo:  e,
+		xrpcc: xrpcc,
+		cfg: &Config{
+			debug:         debug,
+			httpAddress:   httpAddress,
+			appviewHost:   appviewHost,
+			ogcardHost:    ogcardHost,
+			linkHost:      linkHost,
+			ipccHost:      ipccHost,
+			staticCDNHost: staticCDNHost,
+		},
+		ipccClient: http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+		},
 	}
 
 	// Create the HTTP server.
@@ -130,10 +166,28 @@ func serve(cctx *cli.Context) error {
 		},
 	}))
 
+	// optional password gating of entire web interface
+	if basicAuthPassword != "" {
+		e.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+			// Be careful to use constant time comparison to prevent timing attacks
+			if subtle.ConstantTimeCompare([]byte(username), []byte("admin")) == 1 &&
+				subtle.ConstantTimeCompare([]byte(password), []byte(basicAuthPassword)) == 1 {
+				return true, nil
+			}
+			return false, nil
+		}))
+	}
+
 	// redirect trailing slash to non-trailing slash.
 	// all of our current endpoints have no trailing slash.
 	e.Use(middleware.RemoveTrailingSlashWithConfig(middleware.TrailingSlashConfig{
 		RedirectCode: http.StatusFound,
+	}))
+
+	// CORS middleware
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: corsOrigins,
+		AllowMethods: []string{http.MethodGet, http.MethodHead, http.MethodOptions},
 	}))
 
 	//
@@ -152,26 +206,41 @@ func serve(cctx *cli.Context) error {
 		return http.FS(fsys)
 	}())
 
-	e.GET("/robots.txt", echo.WrapHandler(staticHandler))
-	e.GET("/ips-v4", echo.WrapHandler(staticHandler))
-	e.GET("/ips-v6", echo.WrapHandler(staticHandler))
-	e.GET("/.well-known/*", echo.WrapHandler(staticHandler))
-	e.GET("/security.txt", func(c echo.Context) error {
-		return c.Redirect(http.StatusMovedPermanently, "/.well-known/security.txt")
-	})
+	// enable some special endpoints for the "canonical" deployment (bsky.app). not having these enabled should *not* impact regular operation
+	if canonicalInstance {
+		e.GET("/ips-v4", echo.WrapHandler(staticHandler))
+		e.GET("/ips-v6", echo.WrapHandler(staticHandler))
+		e.GET("/security.txt", func(c echo.Context) error {
+			return c.Redirect(http.StatusMovedPermanently, "/.well-known/security.txt")
+		})
+		e.GET("/.well-known/*", echo.WrapHandler(staticHandler))
+	}
+
+	// default to permissive, but Disallow all if flag set
+	if robotsDisallowAll {
+		e.File("/robots.txt", "static/robots-disallow-all.txt")
+	} else {
+		e.GET("/robots.txt", echo.WrapHandler(staticHandler))
+	}
+
 	e.GET("/iframe/youtube.html", echo.WrapHandler(staticHandler))
 	e.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", staticHandler)), func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			path := c.Request().URL.Path
-			maxAge := 1 * (60 * 60) // default is 1 hour
+			c.Response().Before(func() {
+				if c.Response().Status >= 300 {
+					return
+				}
 
-			// Cache javascript and images files for 1 week, which works because
-			// they're always versioned (e.g. /static/js/main.64c14927.js)
-			if strings.HasPrefix(path, "/static/js/") || strings.HasPrefix(path, "/static/images/") {
-				maxAge = 7 * (60 * 60 * 24) // 1 week
-			}
+				path := c.Request().URL.Path
+				maxAge := 1 * (60 * 60) // default is 1 hour
 
-			c.Response().Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", maxAge))
+				// all assets in /static/js, /static/css, /static/media are content-hashed and can be cached for a long time
+				if strings.HasPrefix(path, "/static/js/") || strings.HasPrefix(path, "/static/css/") || strings.HasPrefix(path, "/static/media/") {
+					maxAge = 365 * (60 * 60 * 24) // 1 year
+				}
+
+				c.Response().Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", maxAge))
+			})
 			return next(c)
 		}
 	})
@@ -179,10 +248,16 @@ func serve(cctx *cli.Context) error {
 	// home
 	e.GET("/", server.WebHome)
 
+	// download
+	e.GET("/download", server.Download)
+
 	// generic routes
+	e.GET("/hashtag/:tag", server.WebGeneric)
+	e.GET("/topic/:topic", server.WebGeneric)
 	e.GET("/search", server.WebGeneric)
 	e.GET("/feeds", server.WebGeneric)
 	e.GET("/notifications", server.WebGeneric)
+	e.GET("/notifications/settings", server.WebGeneric)
 	e.GET("/lists", server.WebGeneric)
 	e.GET("/moderation", server.WebGeneric)
 	e.GET("/moderation/modlists", server.WebGeneric)
@@ -191,25 +266,40 @@ func serve(cctx *cli.Context) error {
 	e.GET("/settings", server.WebGeneric)
 	e.GET("/settings/language", server.WebGeneric)
 	e.GET("/settings/app-passwords", server.WebGeneric)
-	e.GET("/settings/home-feed", server.WebGeneric)
+	e.GET("/settings/following-feed", server.WebGeneric)
 	e.GET("/settings/saved-feeds", server.WebGeneric)
 	e.GET("/settings/threads", server.WebGeneric)
 	e.GET("/settings/external-embeds", server.WebGeneric)
+	e.GET("/settings/accessibility", server.WebGeneric)
+	e.GET("/settings/appearance", server.WebGeneric)
+	e.GET("/settings/account", server.WebGeneric)
+	e.GET("/settings/privacy-and-security", server.WebGeneric)
+	e.GET("/settings/content-and-media", server.WebGeneric)
+	e.GET("/settings/about", server.WebGeneric)
+	e.GET("/settings/app-icon", server.WebGeneric)
 	e.GET("/sys/debug", server.WebGeneric)
+	e.GET("/sys/debug-mod", server.WebGeneric)
 	e.GET("/sys/log", server.WebGeneric)
 	e.GET("/support", server.WebGeneric)
 	e.GET("/support/privacy", server.WebGeneric)
 	e.GET("/support/tos", server.WebGeneric)
 	e.GET("/support/community-guidelines", server.WebGeneric)
 	e.GET("/support/copyright", server.WebGeneric)
+	e.GET("/intent/compose", server.WebGeneric)
+	e.GET("/intent/verify-email", server.WebGeneric)
+	e.GET("/messages", server.WebGeneric)
+	e.GET("/messages/:conversation", server.WebGeneric)
 
 	// profile endpoints; only first populates info
 	e.GET("/profile/:handleOrDID", server.WebProfile)
 	e.GET("/profile/:handleOrDID/follows", server.WebGeneric)
 	e.GET("/profile/:handleOrDID/followers", server.WebGeneric)
+	e.GET("/profile/:handleOrDID/known-followers", server.WebGeneric)
+	e.GET("/profile/:handleOrDID/search", server.WebGeneric)
 	e.GET("/profile/:handleOrDID/lists/:rkey", server.WebGeneric)
 	e.GET("/profile/:handleOrDID/feed/:rkey", server.WebGeneric)
 	e.GET("/profile/:handleOrDID/feed/:rkey/liked-by", server.WebGeneric)
+	e.GET("/profile/:handleOrDID/labeler/liked-by", server.WebGeneric)
 
 	// profile RSS feed (DID not handle)
 	e.GET("/profile/:ident/rss", server.WebProfileRSS)
@@ -218,9 +308,23 @@ func serve(cctx *cli.Context) error {
 	e.GET("/profile/:handleOrDID/post/:rkey", server.WebPost)
 	e.GET("/profile/:handleOrDID/post/:rkey/liked-by", server.WebGeneric)
 	e.GET("/profile/:handleOrDID/post/:rkey/reposted-by", server.WebGeneric)
+	e.GET("/profile/:handleOrDID/post/:rkey/quotes", server.WebGeneric)
 
-	// Mailmodo
-	e.POST("/api/waitlist", server.apiWaitlist)
+	// starter packs
+	e.GET("/starter-pack/:handleOrDID/:rkey", server.WebStarterPack)
+	e.GET("/starter-pack-short/:code", server.WebGeneric)
+	e.GET("/start/:handleOrDID/:rkey", server.WebStarterPack)
+
+	// ipcc
+	e.GET("/ipcc", server.WebIpCC)
+
+	if linkHost != "" {
+		linkUrl, err := url.Parse(linkHost)
+		if err != nil {
+			return err
+		}
+		e.Group("/:linkId", server.LinkProxyMiddleware(linkUrl))
+	}
 
 	// Start the server.
 	log.Infof("starting server address=%s", httpAddress)
@@ -267,32 +371,76 @@ func (srv *Server) Shutdown() error {
 	return srv.httpd.Shutdown(ctx)
 }
 
+// NewTemplateContext returns a new pongo2 context with some default values.
+func (srv *Server) NewTemplateContext() pongo2.Context {
+	return pongo2.Context{
+		"staticCDNHost": srv.cfg.staticCDNHost,
+	}
+}
+
 func (srv *Server) errorHandler(err error, c echo.Context) {
 	code := http.StatusInternalServerError
 	if he, ok := err.(*echo.HTTPError); ok {
 		code = he.Code
 	}
 	c.Logger().Error(err)
-	data := pongo2.Context{
-		"statusCode": code,
-	}
+	data := srv.NewTemplateContext()
+	data["statusCode"] = code
 	c.Render(code, "error.html", data)
+}
+
+// Handler for redirecting to the download page.
+func (srv *Server) Download(c echo.Context) error {
+	ua := c.Request().UserAgent()
+	if strings.Contains(ua, "Android") {
+		return c.Redirect(http.StatusFound, "https://play.google.com/store/apps/details?id=xyz.blueskyweb.app")
+	}
+
+	if strings.Contains(ua, "iPhone") || strings.Contains(ua, "iPad") || strings.Contains(ua, "iPod") {
+		return c.Redirect(http.StatusFound, "https://apps.apple.com/tr/app/bluesky-social/id6444370199")
+	}
+
+	return c.Redirect(http.StatusFound, "/")
+}
+
+// Handler for proxying top-level paths to link service, which ends up serving a redirect
+func (srv *Server) LinkProxyMiddleware(url *url.URL) echo.MiddlewareFunc {
+	return middleware.ProxyWithConfig(
+		middleware.ProxyConfig{
+			Balancer: middleware.NewRoundRobinBalancer(
+				[]*middleware.ProxyTarget{{URL: url}},
+			),
+			Skipper: func(c echo.Context) bool {
+				req := c.Request()
+				if req.Method == "GET" &&
+					strings.LastIndex(strings.TrimRight(req.URL.Path, "/"), "/") == 0 && // top-level path
+					!strings.HasPrefix(req.URL.Path, "/_") { // e.g. /_health endpoint
+					return false
+				}
+				return true
+			},
+			RetryCount: 2,
+			ErrorHandler: func(c echo.Context, err error) error {
+				return c.Redirect(302, "/")
+			},
+		},
+	)
 }
 
 // handler for endpoint that have no specific server-side handling
 func (srv *Server) WebGeneric(c echo.Context) error {
-	data := pongo2.Context{}
+	data := srv.NewTemplateContext()
 	return c.Render(http.StatusOK, "base.html", data)
 }
 
 func (srv *Server) WebHome(c echo.Context) error {
-	data := pongo2.Context{}
+	data := srv.NewTemplateContext()
 	return c.Render(http.StatusOK, "home.html", data)
 }
 
 func (srv *Server) WebPost(c echo.Context) error {
 	ctx := c.Request().Context()
-	data := pongo2.Context{}
+	data := srv.NewTemplateContext()
 
 	// sanity check arguments. don't 4xx, just let app handle if not expected format
 	rkeyParam := c.Param("rkey")
@@ -364,9 +512,48 @@ func (srv *Server) WebPost(c echo.Context) error {
 	return c.Render(http.StatusOK, "post.html", data)
 }
 
+func (srv *Server) WebStarterPack(c echo.Context) error {
+	req := c.Request()
+	ctx := req.Context()
+	data := srv.NewTemplateContext()
+	data["requestURI"] = fmt.Sprintf("https://%s%s", req.Host, req.URL.Path)
+	// sanity check arguments. don't 4xx, just let app handle if not expected format
+	rkeyParam := c.Param("rkey")
+	rkey, err := syntax.ParseRecordKey(rkeyParam)
+	if err != nil {
+		log.Errorf("bad rkey: %v", err)
+		return c.Render(http.StatusOK, "starterpack.html", data)
+	}
+	handleOrDIDParam := c.Param("handleOrDID")
+	handleOrDID, err := syntax.ParseAtIdentifier(handleOrDIDParam)
+	if err != nil {
+		log.Errorf("bad identifier: %v", err)
+		return c.Render(http.StatusOK, "starterpack.html", data)
+	}
+	identifier := handleOrDID.Normalize().String()
+	starterPackURI := fmt.Sprintf("at://%s/app.bsky.graph.starterpack/%s", identifier, rkey)
+	spv, err := appbsky.GraphGetStarterPack(ctx, srv.xrpcc, starterPackURI)
+	if err != nil {
+		log.Errorf("failed to fetch starter pack view for: %s\t%v", starterPackURI, err)
+		return c.Render(http.StatusOK, "starterpack.html", data)
+	}
+	if spv.StarterPack == nil || spv.StarterPack.Record == nil {
+		return c.Render(http.StatusOK, "starterpack.html", data)
+	}
+	rec, ok := spv.StarterPack.Record.Val.(*appbsky.GraphStarterpack)
+	if !ok {
+		return c.Render(http.StatusOK, "starterpack.html", data)
+	}
+	data["title"] = rec.Name
+	if srv.cfg.ogcardHost != "" {
+		data["imgThumbUrl"] = fmt.Sprintf("%s/start/%s/%s", srv.cfg.ogcardHost, identifier, rkey)
+	}
+	return c.Render(http.StatusOK, "starterpack.html", data)
+}
+
 func (srv *Server) WebProfile(c echo.Context) error {
 	ctx := c.Request().Context()
-	data := pongo2.Context{}
+	data := srv.NewTemplateContext()
 
 	// sanity check arguments. don't 4xx, just let app handle if not expected format
 	handleOrDIDParam := c.Param("handleOrDID")
@@ -397,35 +584,53 @@ func (srv *Server) WebProfile(c echo.Context) error {
 	return c.Render(http.StatusOK, "profile.html", data)
 }
 
-func (srv *Server) apiWaitlist(c echo.Context) error {
-	type jsonError struct {
-		Error string `json:"error"`
-	}
+type IPCCRequest struct {
+	IP string `json:"ip"`
+}
+type IPCCResponse struct {
+	CC string `json:"countryCode"`
+}
 
-	// Read the API request.
-	type apiRequest struct {
-		Email string `json:"email"`
-	}
-
-	bodyReader := http.MaxBytesReader(c.Response(), c.Request().Body, 16*1024)
-	payload, err := ioutil.ReadAll(bodyReader)
+func (srv *Server) WebIpCC(c echo.Context) error {
+	realIP := c.RealIP()
+	addr, err := netip.ParseAddr(realIP)
 	if err != nil {
-		return err
+		log.Warnf("could not parse IP %q %s", realIP, err)
+		return c.JSON(400, IPCCResponse{})
 	}
-	var req apiRequest
-	if err := json.Unmarshal(payload, &req); err != nil {
-		return c.JSON(http.StatusBadRequest, jsonError{Error: "Invalid API request"})
+	var request []byte
+	if addr.Is4() {
+		ip4 := addr.As4()
+		var dest [8]byte
+		base64.StdEncoding.Encode(dest[:], ip4[:])
+		request, _ = json.Marshal(IPCCRequest{IP: string(dest[:])})
+	} else if addr.Is6() {
+		ip6 := addr.As16()
+		var dest [24]byte
+		base64.StdEncoding.Encode(dest[:], ip6[:])
+		request, _ = json.Marshal(IPCCRequest{IP: string(dest[:])})
 	}
 
-	if req.Email == "" {
-		return c.JSON(http.StatusBadRequest, jsonError{Error: "Please enter a valid email address."})
+	ipccUrlBuilder, err := url.Parse(srv.cfg.ipccHost)
+	if err != nil {
+		log.Errorf("ipcc misconfigured bad url %s", err)
+		return c.JSON(500, IPCCResponse{})
 	}
-
-	if err := srv.mailmodo.AddToList(c.Request().Context(), req.Email); err != nil {
-		log.Errorf("adding email to waitlist failed: %s", err)
-		return c.JSON(http.StatusBadRequest, jsonError{
-			Error: "Storing email in waitlist failed. Please enter a valid email address.",
-		})
+	ipccUrlBuilder.Path = "ipccdata.IpCcService/Lookup"
+	ipccUrl := ipccUrlBuilder.String()
+	postBodyReader := bytes.NewReader(request)
+	response, err := srv.ipccClient.Post(ipccUrl, "application/json", postBodyReader)
+	if err != nil {
+		log.Warnf("ipcc backend error %s", err)
+		return c.JSON(500, IPCCResponse{})
 	}
-	return c.JSON(http.StatusOK, map[string]bool{"success": true})
+	defer response.Body.Close()
+	dec := json.NewDecoder(response.Body)
+	var outResponse IPCCResponse
+	err = dec.Decode(&outResponse)
+	if err != nil {
+		log.Warnf("ipcc bad response %s", err)
+		return c.JSON(500, IPCCResponse{})
+	}
+	return c.JSON(200, outResponse)
 }

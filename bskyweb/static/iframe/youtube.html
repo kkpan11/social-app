@@ -5,16 +5,14 @@
     }
     .container {
         position: relative;
-        width: 100%;
-        height: 0;
-        padding-bottom: 56.25%;
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
     }
     .video {
         position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        width: 100vw;
+        height: 100vh;
     }
 </style>
 <div class="container"><div class="video" id="player"></div></div>
@@ -29,13 +27,21 @@
 
   let player
   function onYouTubeIframeAPIReady() {
+    let videoId = url.searchParams.get('videoId')
+    videoId = decodeURIComponent(videoId)
+    videoId = videoId.replace(/[^a-zA-Z0-9_-]/g, "")
+    if (videoId.length !== 11) throw new Error("Invalid video ID")
+
+    let start = url.searchParams.get('start')
+    start = start.replace(/[^0-9]/g, "")
+
     player = new YT.Player('player', {
       width: "1000",
       height: "1000",
-      videoId: url.searchParams.get('videoId'),
+      videoId,
       playerVars: {
         autoplay: 1,
-        start: url.searchParams.get('start'),
+        start,
         rel: 0,
         loop: 0,
         playsinline: 1,

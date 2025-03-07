@@ -1,18 +1,14 @@
-import React, {useEffect} from 'react'
-import {observer} from 'mobx-react-lite'
-import {Animated, Easing, Platform, StyleSheet, View} from 'react-native'
-import {ComposePost} from '../com/composer/Composer'
-import {useComposerState} from 'state/shell/composer'
-import {useAnimatedValue} from 'lib/hooks/useAnimatedValue'
-import {usePalette} from 'lib/hooks/usePalette'
+import {useEffect} from 'react'
+import {Animated, Easing} from 'react-native'
 
-export const Composer = observer(function ComposerImpl({
-  winHeight,
-}: {
-  winHeight: number
-}) {
+import {useAnimatedValue} from '#/lib/hooks/useAnimatedValue'
+import {useComposerState} from '#/state/shell/composer'
+import {atoms as a, useTheme} from '#/alf'
+import {ComposePost} from '../com/composer/Composer'
+
+export function Composer({winHeight}: {winHeight: number}) {
   const state = useComposerState()
-  const pal = usePalette('default')
+  const t = useTheme()
   const initInterp = useAnimatedValue(0)
 
   useEffect(() => {
@@ -42,12 +38,12 @@ export const Composer = observer(function ComposerImpl({
   // =
 
   if (!state) {
-    return <View />
+    return null
   }
 
   return (
     <Animated.View
-      style={[styles.wrapper, pal.view, wrapperAnimStyle]}
+      style={[a.absolute, a.inset_0, t.atoms.bg, wrapperAnimStyle]}
       aria-modal
       accessibilityViewIsModal>
       <ComposePost
@@ -55,21 +51,10 @@ export const Composer = observer(function ComposerImpl({
         onPost={state.onPost}
         quote={state.quote}
         mention={state.mention}
+        text={state.text}
+        imageUris={state.imageUris}
+        videoUri={state.videoUri}
       />
     </Animated.View>
   )
-})
-
-const styles = StyleSheet.create({
-  wrapper: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: '100%',
-    ...Platform.select({
-      ios: {
-        paddingTop: 24,
-      },
-    }),
-  },
-})
+}

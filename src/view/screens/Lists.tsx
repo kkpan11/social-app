@@ -1,28 +1,30 @@
 import React from 'react'
-import {View} from 'react-native'
-import {useFocusEffect, useNavigation} from '@react-navigation/native'
-import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome'
 import {AtUri} from '@atproto/api'
-import {NativeStackScreenProps, CommonNavigatorParams} from 'lib/routes/types'
-import {MyLists} from '#/view/com/lists/MyLists'
-import {Text} from 'view/com/util/text/Text'
-import {Button} from 'view/com/util/forms/Button'
-import {NavigationProp} from 'lib/routes/types'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {SimpleViewHeader} from 'view/com/util/SimpleViewHeader'
-import {s} from 'lib/styles'
-import {useSetMinimalShellMode} from '#/state/shell'
+import {msg, Trans} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
+import {useFocusEffect, useNavigation} from '@react-navigation/native'
+
+import {useEmail} from '#/lib/hooks/useEmail'
+import {CommonNavigatorParams, NativeStackScreenProps} from '#/lib/routes/types'
+import {NavigationProp} from '#/lib/routes/types'
 import {useModalControls} from '#/state/modals'
-import {Trans} from '@lingui/macro'
+import {useSetMinimalShellMode} from '#/state/shell'
+import {MyLists} from '#/view/com/lists/MyLists'
+import {atoms as a} from '#/alf'
+import {Button, ButtonIcon, ButtonText} from '#/components/Button'
+import {useDialogControl} from '#/components/Dialog'
+import {VerifyEmailDialog} from '#/components/dialogs/VerifyEmailDialog'
+import {PlusLarge_Stroke2_Corner0_Rounded as PlusIcon} from '#/components/icons/Plus'
+import * as Layout from '#/components/Layout'
 
 type Props = NativeStackScreenProps<CommonNavigatorParams, 'Lists'>
 export function ListsScreen({}: Props) {
-  const pal = usePalette('default')
+  const {_} = useLingui()
   const setMinimalShellMode = useSetMinimalShellMode()
-  const {isMobile} = useWebMediaQueries()
   const navigation = useNavigation<NavigationProp>()
   const {openModal} = useModalControls()
+  const {needsEmailVerification} = useEmail()
+  const control = useDialogControl()
 
   useFocusEffect(
     React.useCallback(() => {
@@ -31,6 +33,11 @@ export function ListsScreen({}: Props) {
   )
 
   const onPressNewList = React.useCallback(() => {
+    if (needsEmailVerification) {
+      control.open()
+      return
+    }
+
     openModal({
       name: 'create-or-edit-list',
       purpose: 'app.bsky.graph.defs#curatelist',
@@ -44,41 +51,37 @@ export function ListsScreen({}: Props) {
         } catch {}
       },
     })
-  }, [openModal, navigation])
+  }, [needsEmailVerification, control, openModal, navigation])
 
   return (
-    <View style={s.hContentRegion} testID="listsScreen">
-      <SimpleViewHeader
-        showBackButton={isMobile}
-        style={
-          !isMobile && [pal.border, {borderLeftWidth: 1, borderRightWidth: 1}]
-        }>
-        <View style={{flex: 1}}>
-          <Text type="title-lg" style={[pal.text, {fontWeight: 'bold'}]}>
-            <Trans>User Lists</Trans>
-          </Text>
-          <Text style={pal.textLight}>
-            <Trans>Public, shareable lists which can drive feeds.</Trans>
-          </Text>
-        </View>
-        <View style={[{marginLeft: 18}, isMobile && {marginLeft: 12}]}>
-          <Button
-            testID="newUserListBtn"
-            type="default"
-            onPress={onPressNewList}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-            }}>
-            <FontAwesomeIcon icon="plus" color={pal.colors.text} />
-            <Text type="button" style={pal.text}>
-              <Trans context="action">New</Trans>
-            </Text>
-          </Button>
-        </View>
-      </SimpleViewHeader>
-      <MyLists filter="curate" style={s.flexGrow1} />
-    </View>
+    <Layout.Screen testID="listsScreen">
+      <Layout.Header.Outer>
+        <Layout.Header.BackButton />
+        <Layout.Header.Content align="left">
+          <Layout.Header.TitleText>
+            <Trans>Lists</Trans>
+          </Layout.Header.TitleText>
+        </Layout.Header.Content>
+        <Button
+          label={_(msg`New list`)}
+          testID="newUserListBtn"
+          color="secondary"
+          variant="solid"
+          size="small"
+          onPress={onPressNewList}>
+          <ButtonIcon icon={PlusIcon} />
+          <ButtonText>
+            <Trans context="action">New</Trans>
+          </ButtonText>
+        </Button>
+      </Layout.Header.Outer>
+      <MyLists filter="curate" style={a.flex_grow} />
+      <VerifyEmailDialog
+        reasonText={_(
+          msg`Before creating a list, you must first verify your email.`,
+        )}
+        control={control}
+      />
+    </Layout.Screen>
   )
 }

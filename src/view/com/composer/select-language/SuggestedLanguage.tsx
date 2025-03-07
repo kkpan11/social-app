@@ -1,22 +1,23 @@
-import React, {useEffect, useState} from 'react'
+import {useEffect, useState} from 'react'
 import {StyleSheet, View} from 'react-native'
-import lande from 'lande'
-import {Trans, msg} from '@lingui/macro'
+import {
+  FontAwesomeIcon,
+  FontAwesomeIconStyle,
+} from '@fortawesome/react-native-fontawesome'
+import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
-import {Text} from '../../util/text/Text'
-import {Button} from '../../util/forms/Button'
+import lande from 'lande'
+
+import {usePalette} from '#/lib/hooks/usePalette'
+import {s} from '#/lib/styles'
 import {code3ToCode2Strict, codeToLanguageName} from '#/locale/helpers'
 import {
   toPostLanguages,
   useLanguagePrefs,
   useLanguagePrefsApi,
 } from '#/state/preferences/languages'
-import {usePalette} from '#/lib/hooks/usePalette'
-import {s} from '#/lib/styles'
-import {
-  FontAwesomeIcon,
-  FontAwesomeIconStyle,
-} from '@fortawesome/react-native-fontawesome'
+import {Button} from '../../util/forms/Button'
+import {Text} from '../../util/text/Text'
 
 // fallbacks for safari
 const onIdle = globalThis.requestIdleCallback || (cb => setTimeout(cb, 1))
@@ -48,37 +49,48 @@ export function SuggestedLanguage({text}: {text: string}) {
     return () => cancelIdle(idle)
   }, [text])
 
-  return suggestedLanguage &&
-    !toPostLanguages(langPrefs.postLanguage).includes(suggestedLanguage) ? (
-    <View style={[pal.border, styles.infoBar]}>
-      <FontAwesomeIcon
-        icon="language"
-        style={pal.text as FontAwesomeIconStyle}
-        size={24}
-      />
-      <Text style={[pal.text, s.flex1]}>
-        <Trans>
-          Are you writing in{' '}
-          <Text type="sm-bold" style={pal.text}>
-            {codeToLanguageName(suggestedLanguage)}
-          </Text>
-          ?
-        </Trans>
-      </Text>
+  if (
+    suggestedLanguage &&
+    !toPostLanguages(langPrefs.postLanguage).includes(suggestedLanguage)
+  ) {
+    const suggestedLanguageName = codeToLanguageName(
+      suggestedLanguage,
+      langPrefs.appLanguage,
+    )
 
-      <Button
-        type="default"
-        onPress={() => setLangPrefs.setPostLanguage(suggestedLanguage)}
-        accessibilityLabel={_(
-          msg`Change post language to ${codeToLanguageName(suggestedLanguage)}`,
-        )}
-        accessibilityHint="">
-        <Text type="button" style={[pal.link, s.fw600]}>
-          <Trans>Yes</Trans>
+    return (
+      <View style={[pal.border, styles.infoBar]}>
+        <FontAwesomeIcon
+          icon="language"
+          style={pal.text as FontAwesomeIconStyle}
+          size={24}
+        />
+        <Text style={[pal.text, s.flex1]}>
+          <Trans>
+            Are you writing in{' '}
+            <Text type="sm-bold" style={pal.text}>
+              {suggestedLanguageName}
+            </Text>
+            ?
+          </Trans>
         </Text>
-      </Button>
-    </View>
-  ) : null
+
+        <Button
+          type="default"
+          onPress={() => setLangPrefs.setPostLanguage(suggestedLanguage)}
+          accessibilityLabel={_(
+            msg`Change post language to ${suggestedLanguageName}`,
+          )}
+          accessibilityHint="">
+          <Text type="button" style={[pal.link, s.fw600]}>
+            <Trans>Yes</Trans>
+          </Text>
+        </Button>
+      </View>
+    )
+  } else {
+    return null
+  }
 }
 
 const styles = StyleSheet.create({

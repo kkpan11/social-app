@@ -6,9 +6,9 @@ To build the SPA bundle (`bundle.web.js`), first get a JavaScript development
 environment set up. Either follow the top-level README, or something quick
 like:
 
-    # install nodejs 18 (specifically)
-    nvm install 18
-    nvm use 18
+    # install nodejs
+    nvm install
+    nvm use
     npm install --global yarn
 
     # setup tools and deps (in top level of this repo)
@@ -24,7 +24,7 @@ Then build and copy over the big 'ol `bundle.web.js` file:
 
 ### Golang Daemon
 
-Install golang. We are generally using v1.21+.
+Install golang. We generally develop against the current stable release of the language, as declared in `go.mod`.
 
 In this directory (`bskyweb/`):
 

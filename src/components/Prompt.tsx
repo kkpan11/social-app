@@ -1,15 +1,18 @@
 import React from 'react'
-import {View, PressableProps} from 'react-native'
+import {GestureResponderEvent, View} from 'react-native'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
-import {useTheme, atoms as a} from '#/alf'
-import {Text} from '#/components/Typography'
-import {Button} from '#/components/Button'
-
+import {atoms as a, useBreakpoints, useTheme} from '#/alf'
+import {Button, ButtonColor, ButtonText} from '#/components/Button'
 import * as Dialog from '#/components/Dialog'
+import {Text} from '#/components/Typography'
+import {BottomSheetViewProps} from '../../modules/bottom-sheet'
 
-export {useDialogControl as usePromptControl} from '#/components/Dialog'
+export {
+  type DialogControlProps as PromptControlProps,
+  useDialogControl as usePromptControl,
+} from '#/components/Dialog'
 
 const Context = React.createContext<{
   titleId: string
@@ -22,9 +25,14 @@ const Context = React.createContext<{
 export function Outer({
   children,
   control,
+  testID,
+  nativeOptions,
 }: React.PropsWithChildren<{
-  control: Dialog.DialogOuterProps['control']
+  control: Dialog.DialogControlProps
+  testID?: string
+  nativeOptions?: Omit<BottomSheetViewProps, 'children'>
 }>) {
+  const {gtMobile} = useBreakpoints()
   const titleId = React.useId()
   const descriptionId = React.useId()
 
@@ -34,36 +42,47 @@ export function Outer({
   )
 
   return (
-    <Dialog.Outer control={control}>
+    <Dialog.Outer
+      control={control}
+      testID={testID}
+      webOptions={{alignCenter: true}}
+      nativeOptions={{preventExpansion: true, ...nativeOptions}}>
+      <Dialog.Handle />
       <Context.Provider value={context}>
-        <Dialog.Handle />
-
-        <Dialog.Inner
+        <Dialog.ScrollableInner
           accessibilityLabelledBy={titleId}
           accessibilityDescribedBy={descriptionId}
-          style={{width: 'auto', maxWidth: 400}}>
+          style={[
+            gtMobile ? {width: 'auto', maxWidth: 400, minWidth: 200} : a.w_full,
+          ]}>
           {children}
-        </Dialog.Inner>
+        </Dialog.ScrollableInner>
       </Context.Provider>
     </Dialog.Outer>
   )
 }
 
-export function Title({children}: React.PropsWithChildren<{}>) {
+export function TitleText({children}: React.PropsWithChildren<{}>) {
   const {titleId} = React.useContext(Context)
   return (
-    <Text nativeID={titleId} style={[a.text_2xl, a.font_bold, a.pb_sm]}>
+    <Text
+      nativeID={titleId}
+      style={[a.text_2xl, a.font_bold, a.pb_sm, a.leading_snug]}>
       {children}
     </Text>
   )
 }
 
-export function Description({children}: React.PropsWithChildren<{}>) {
+export function DescriptionText({
+  children,
+  selectable,
+}: React.PropsWithChildren<{selectable?: boolean}>) {
   const t = useTheme()
   const {descriptionId} = React.useContext(Context)
   return (
     <Text
       nativeID={descriptionId}
+      selectable={selectable}
       style={[a.text_md, a.leading_snug, t.atoms.text_contrast_high, a.pb_lg]}>
       {children}
     </Text>
@@ -71,48 +90,133 @@ export function Description({children}: React.PropsWithChildren<{}>) {
 }
 
 export function Actions({children}: React.PropsWithChildren<{}>) {
+  const {gtMobile} = useBreakpoints()
+
   return (
-    <View style={[a.w_full, a.flex_row, a.gap_sm, a.justify_end]}>
+    <View
+      style={[
+        a.w_full,
+        a.gap_md,
+        a.justify_end,
+        gtMobile
+          ? [a.flex_row, a.flex_row_reverse, a.justify_start]
+          : [a.flex_col],
+      ]}>
       {children}
     </View>
   )
 }
 
 export function Cancel({
-  children,
-}: React.PropsWithChildren<{onPress?: PressableProps['onPress']}>) {
+  cta,
+}: {
+  /**
+   * Optional i18n string. If undefined, it will default to "Cancel".
+   */
+  cta?: string
+}) {
   const {_} = useLingui()
+  const {gtMobile} = useBreakpoints()
   const {close} = Dialog.useDialogContext()
+  const onPress = React.useCallback(() => {
+    close()
+  }, [close])
+
   return (
     <Button
       variant="solid"
       color="secondary"
-      size="small"
-      label={_(msg`Cancel`)}
-      onPress={close}>
-      {children}
+      size={gtMobile ? 'small' : 'large'}
+      label={cta || _(msg`Cancel`)}
+      onPress={onPress}>
+      <ButtonText>{cta || _(msg`Cancel`)}</ButtonText>
     </Button>
   )
 }
 
 export function Action({
-  children,
   onPress,
-}: React.PropsWithChildren<{onPress?: () => void}>) {
+  color = 'primary',
+  cta,
+  testID,
+}: {
+  /**
+   * Callback to run when the action is pressed. The method is called _after_
+   * the dialog closes.
+   *
+   * Note: The dialog will close automatically when the action is pressed, you
+   * should NOT close the dialog as a side effect of this method.
+   */
+  onPress: (e: GestureResponderEvent) => void
+  color?: ButtonColor
+  /**
+   * Optional i18n string. If undefined, it will default to "Confirm".
+   */
+  cta?: string
+  testID?: string
+}) {
   const {_} = useLingui()
+  const {gtMobile} = useBreakpoints()
   const {close} = Dialog.useDialogContext()
-  const handleOnPress = React.useCallback(() => {
-    close()
-    onPress?.()
-  }, [close, onPress])
+  const handleOnPress = React.useCallback(
+    (e: GestureResponderEvent) => {
+      close(() => onPress?.(e))
+    },
+    [close, onPress],
+  )
+
   return (
     <Button
       variant="solid"
-      color="primary"
-      size="small"
-      label={_(msg`Confirm`)}
-      onPress={handleOnPress}>
-      {children}
+      color={color}
+      size={gtMobile ? 'small' : 'large'}
+      label={cta || _(msg`Confirm`)}
+      onPress={handleOnPress}
+      testID={testID}>
+      <ButtonText>{cta || _(msg`Confirm`)}</ButtonText>
     </Button>
+  )
+}
+
+export function Basic({
+  control,
+  title,
+  description,
+  cancelButtonCta,
+  confirmButtonCta,
+  onConfirm,
+  confirmButtonColor,
+  showCancel = true,
+}: React.PropsWithChildren<{
+  control: Dialog.DialogOuterProps['control']
+  title: string
+  description: string
+  cancelButtonCta?: string
+  confirmButtonCta?: string
+  /**
+   * Callback to run when the Confirm button is pressed. The method is called
+   * _after_ the dialog closes.
+   *
+   * Note: The dialog will close automatically when the action is pressed, you
+   * should NOT close the dialog as a side effect of this method.
+   */
+  onConfirm: (e: GestureResponderEvent) => void
+  confirmButtonColor?: ButtonColor
+  showCancel?: boolean
+}>) {
+  return (
+    <Outer control={control} testID="confirmModal">
+      <TitleText>{title}</TitleText>
+      <DescriptionText>{description}</DescriptionText>
+      <Actions>
+        <Action
+          cta={confirmButtonCta}
+          onPress={onConfirm}
+          color={confirmButtonColor}
+          testID="confirmBtn"
+        />
+        {showCancel && <Cancel cta={cancelButtonCta} />}
+      </Actions>
+    </Outer>
   )
 }

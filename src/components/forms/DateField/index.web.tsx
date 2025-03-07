@@ -1,14 +1,15 @@
 import React from 'react'
-import {TextInput, TextInputProps, StyleSheet} from 'react-native'
-// @ts-ignore
+import {StyleSheet, TextInput, TextInputProps} from 'react-native'
+// @ts-expect-error untyped
 import {unstable_createElement} from 'react-native-web'
 
-import * as TextField from '#/components/forms/TextField'
-import {toSimpleDateString} from '#/components/forms/DateField/utils'
 import {DateFieldProps} from '#/components/forms/DateField/types'
+import {toSimpleDateString} from '#/components/forms/DateField/utils'
+import * as TextField from '#/components/forms/TextField'
+import {CalendarDays_Stroke2_Corner0_Rounded as CalendarDays} from '#/components/icons/CalendarDays'
 
 export * as utils from '#/components/forms/DateField/utils'
-export const Label = TextField.Label
+export const LabelText = TextField.LabelText
 
 const InputBase = React.forwardRef<HTMLInputElement, TextInputProps>(
   ({style, ...props}, ref) => {
@@ -33,10 +34,13 @@ const Input = TextField.createInput(InputBase as unknown as typeof TextInput)
 
 export function DateField({
   value,
+  inputRef,
   onChangeDate,
   label,
   isInvalid,
   testID,
+  accessibilityHint,
+  maximumDate,
 }: DateFieldProps) {
   const handleOnChange = React.useCallback(
     (e: any) => {
@@ -52,12 +56,16 @@ export function DateField({
 
   return (
     <TextField.Root isInvalid={isInvalid}>
+      <TextField.Icon icon={CalendarDays} />
       <Input
-        value={value}
+        value={toSimpleDateString(value)}
+        inputRef={inputRef as React.Ref<TextInput>}
         label={label}
         onChange={handleOnChange}
-        onChangeText={() => {}}
         testID={testID}
+        accessibilityHint={accessibilityHint}
+        // @ts-expect-error not typed as <input type="date"> even though it is one
+        max={maximumDate ? toSimpleDateString(maximumDate) : undefined}
       />
     </TextField.Root>
   )

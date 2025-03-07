@@ -1,35 +1,42 @@
 import React from 'react'
 import {
-  SafeAreaView,
   ActivityIndicator,
+  SafeAreaView,
   StyleSheet,
   TouchableOpacity,
   View,
 } from 'react-native'
-import {TextInput, ScrollView} from './util'
-import LinearGradient from 'react-native-linear-gradient'
-import * as Toast from '../util/Toast'
-import {Text} from '../util/text/Text'
-import {s, colors, gradients} from 'lib/styles'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useTheme} from 'lib/ThemeContext'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {ErrorMessage} from '../util/error/ErrorMessage'
-import {cleanError} from 'lib/strings/errors'
-import {resetToTab} from '../../../Navigation'
-import {Trans, msg} from '@lingui/macro'
+import {LinearGradient} from 'expo-linear-gradient'
+import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
+
+import {usePalette} from '#/lib/hooks/usePalette'
+import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
+import {cleanError} from '#/lib/strings/errors'
+import {colors, gradients, s} from '#/lib/styles'
+import {useTheme} from '#/lib/ThemeContext'
+import {isAndroid, isWeb} from '#/platform/detection'
 import {useModalControls} from '#/state/modals'
-import {useSession, useSessionApi, getAgent} from '#/state/session'
-import {isAndroid} from 'platform/detection'
+import {DM_SERVICE_HEADERS} from '#/state/queries/messages/const'
+import {useAgent, useSession, useSessionApi} from '#/state/session'
+import {atoms as a, useTheme as useNewTheme} from '#/alf'
+import {CircleInfo_Stroke2_Corner0_Rounded as CircleInfo} from '#/components/icons/CircleInfo'
+import {Text as NewText} from '#/components/Typography'
+import {resetToTab} from '../../../Navigation'
+import {ErrorMessage} from '../util/error/ErrorMessage'
+import {Text} from '../util/text/Text'
+import * as Toast from '../util/Toast'
+import {ScrollView, TextInput} from './util'
 
 export const snapPoints = isAndroid ? ['90%'] : ['55%']
 
 export function Component({}: {}) {
   const pal = usePalette('default')
   const theme = useTheme()
+  const t = useNewTheme()
   const {currentAccount} = useSession()
-  const {clearCurrentAccount, removeAccount} = useSessionApi()
+  const agent = useAgent()
+  const {removeAccount} = useSessionApi()
   const {_} = useLingui()
   const {closeModal} = useModalControls()
   const {isMobile} = useWebMediaQueries()
@@ -42,7 +49,7 @@ export function Component({}: {}) {
     setError('')
     setIsProcessing(true)
     try {
-      await getAgent().com.atproto.server.requestAccountDelete()
+      await agent.com.atproto.server.requestAccountDelete()
       setIsEmailSent(true)
     } catch (e: any) {
       setError(cleanError(e))
@@ -59,7 +66,17 @@ export function Component({}: {}) {
     const token = confirmCode.replace(/\s/g, '')
 
     try {
-      await getAgent().com.atproto.server.deleteAccount({
+      // inform chat service of intent to delete account
+      const {success} = await agent.api.chat.bsky.actor.deleteAccount(
+        undefined,
+        {
+          headers: DM_SERVICE_HEADERS,
+        },
+      )
+      if (!success) {
+        throw new Error('Failed to inform chat service of account deletion')
+      }
+      await agent.com.atproto.server.deleteAccount({
         did: currentAccount.did,
         password,
         token,
@@ -67,7 +84,6 @@ export function Component({}: {}) {
       Toast.show(_(msg`Your account has been deleted`))
       resetToTab('HomeTab')
       removeAccount(currentAccount)
-      clearCurrentAccount()
       closeModal()
     } catch (e: any) {
       setError(cleanError(e))
@@ -79,31 +95,29 @@ export function Component({}: {}) {
   }
   return (
     <SafeAreaView style={[s.flex1]}>
-      <ScrollView
-        contentContainerStyle={[pal.view]}
-        keyboardShouldPersistTaps="handled">
+      <ScrollView style={[pal.view]} keyboardShouldPersistTaps="handled">
         <View style={[styles.titleContainer, pal.view]}>
           <Text type="title-xl" style={[s.textCenter, pal.text]}>
-            <Trans>Delete Account</Trans>
+            <Trans>
+              Delete Account{' '}
+              <Text type="title-xl" style={[pal.text, s.bold]}>
+                "
+              </Text>
+              <Text
+                type="title-xl"
+                numberOfLines={1}
+                style={[
+                  isMobile ? styles.titleMobile : styles.titleDesktop,
+                  pal.text,
+                  s.bold,
+                ]}>
+                {currentAccount?.handle}
+              </Text>
+              <Text type="title-xl" style={[pal.text, s.bold]}>
+                "
+              </Text>
+            </Trans>
           </Text>
-          <View style={[pal.view, s.flexRow]}>
-            <Text type="title-xl" style={[pal.text, s.bold]}>
-              {' "'}
-            </Text>
-            <Text
-              type="title-xl"
-              numberOfLines={1}
-              style={[
-                isMobile ? styles.titleMobile : styles.titleDesktop,
-                pal.text,
-                s.bold,
-              ]}>
-              {currentAccount?.handle}
-            </Text>
-            <Text type="title-xl" style={[pal.text, s.bold]}>
-              {'"'}
-            </Text>
-          </View>
         </View>
         {!isEmailSent ? (
           <>
@@ -158,6 +172,36 @@ export function Component({}: {}) {
                 </TouchableOpacity>
               </>
             )}
+
+            <View style={[!isWeb && a.px_xl]}>
+              <View
+                style={[
+                  a.w_full,
+                  a.flex_row,
+                  a.gap_sm,
+                  a.mt_lg,
+                  a.p_lg,
+                  a.rounded_sm,
+                  t.atoms.bg_contrast_25,
+                ]}>
+                <CircleInfo
+                  size="md"
+                  style={[
+                    a.relative,
+                    {
+                      top: -1,
+                    },
+                  ]}
+                />
+
+                <NewText style={[a.leading_snug, a.flex_1]}>
+                  <Trans>
+                    You can also temporarily deactivate your account instead,
+                    and reactivate it at any time.
+                  </Trans>
+                </NewText>
+              </View>
+            </View>
           </>
         ) : (
           <>
@@ -173,7 +217,7 @@ export function Component({}: {}) {
             </Text>
             <TextInput
               style={[styles.textInput, pal.borderDark, pal.text, styles.mb20]}
-              placeholder="Confirmation code"
+              placeholder={_(msg`Confirmation code`)}
               placeholderTextColor={pal.textLight.color}
               keyboardAppearance={theme.colorScheme}
               value={confirmCode}
@@ -192,7 +236,7 @@ export function Component({}: {}) {
             </Text>
             <TextInput
               style={[styles.textInput, pal.borderDark, pal.text]}
-              placeholder="Password"
+              placeholder={_(msg`Password`)}
               placeholderTextColor={pal.textLight.color}
               keyboardAppearance={theme.colorScheme}
               secureTextEntry
@@ -228,7 +272,7 @@ export function Component({}: {}) {
                   onPress={onCancel}
                   accessibilityRole="button"
                   accessibilityLabel={_(msg`Cancel account deletion`)}
-                  accessibilityHint="Exits account deletion process"
+                  accessibilityHint={_(msg`Exits account deletion process`)}
                   onAccessibilityEscape={onCancel}>
                   <Text type="button-lg" style={pal.textLight}>
                     <Trans context="action">Cancel</Trans>

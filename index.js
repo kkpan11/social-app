@@ -1,16 +1,12 @@
 import 'react-native-gesture-handler' // must be first
-import {LogBox} from 'react-native'
-
 import '#/platform/polyfills'
-import {IS_TEST} from '#/env'
+
+import {LogBox} from 'react-native'
 import {registerRootComponent} from 'expo'
-import {doPolyfill} from '#/lib/api/api-polyfill'
 
 import App from '#/App'
 
-doPolyfill()
-
-if (IS_TEST) {
+if (process.env.NODE_ENV === 'test') {
   LogBox.ignoreAllLogs() // suppress all logs in tests
 } else {
   LogBox.ignoreLogs(['Require cycle:']) // suppress require-cycle warnings, it's fine

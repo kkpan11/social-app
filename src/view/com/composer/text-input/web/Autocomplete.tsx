@@ -1,23 +1,21 @@
-import React, {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useState,
-} from 'react'
+import {forwardRef, useEffect, useImperativeHandle, useState} from 'react'
 import {Pressable, StyleSheet, View} from 'react-native'
+import {Trans} from '@lingui/macro'
 import {ReactRenderer} from '@tiptap/react'
-import tippy, {Instance as TippyInstance} from 'tippy.js'
 import {
+  SuggestionKeyDownProps,
   SuggestionOptions,
   SuggestionProps,
-  SuggestionKeyDownProps,
 } from '@tiptap/suggestion'
+import tippy, {Instance as TippyInstance} from 'tippy.js'
+
+import {usePalette} from '#/lib/hooks/usePalette'
+import {sanitizeDisplayName} from '#/lib/strings/display-names'
+import {sanitizeHandle} from '#/lib/strings/handles'
 import {ActorAutocompleteFn} from '#/state/queries/actor-autocomplete'
-import {usePalette} from 'lib/hooks/usePalette'
-import {Text} from 'view/com/util/text/Text'
-import {UserAvatar} from 'view/com/util/UserAvatar'
+import {Text} from '#/view/com/util/text/Text'
+import {UserAvatar} from '#/view/com/util/UserAvatar'
 import {useGrapheme} from '../hooks/useGrapheme'
-import {Trans} from '@lingui/macro'
 
 interface MentionListRef {
   onKeyDown: (props: SuggestionKeyDownProps) => boolean
@@ -152,7 +150,9 @@ const MentionList = forwardRef<MentionListRef, SuggestionProps>(
           {items.length > 0 ? (
             items.map((item, index) => {
               const {name: displayName} = getGraphemeString(
-                item.displayName ?? item.handle,
+                sanitizeDisplayName(
+                  item.displayName || sanitizeHandle(item.handle),
+                ),
                 30, // Heuristic value; can be modified
               )
               const isSelected = selectedIndex === index
@@ -175,13 +175,17 @@ const MentionList = forwardRef<MentionListRef, SuggestionProps>(
                   }}
                   accessibilityRole="button">
                   <View style={styles.avatarAndDisplayName}>
-                    <UserAvatar avatar={item.avatar ?? null} size={26} />
-                    <Text style={pal.text} numberOfLines={1}>
+                    <UserAvatar
+                      avatar={item.avatar ?? null}
+                      size={26}
+                      type={item.associated?.labeler ? 'labeler' : 'user'}
+                    />
+                    <Text emoji style={pal.text} numberOfLines={1}>
                       {displayName}
                     </Text>
                   </View>
                   <Text type="xs" style={pal.textLight} numberOfLines={1}>
-                    @{item.handle}
+                    {sanitizeHandle(item.handle, '@')}
                   </Text>
                 </Pressable>
               )

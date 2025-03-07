@@ -1,16 +1,17 @@
 import * as React from 'react'
-import {FlatList, ScrollView, StyleSheet, View} from 'react-native'
+import {ScrollView, View} from 'react-native'
 import {useAnimatedRef} from 'react-native-reanimated'
-import {Pager, PagerRef, RenderTabBarFnProps} from 'view/com/pager/Pager'
-import {TabBar} from './TabBar'
-import {usePalette} from '#/lib/hooks/usePalette'
-import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
+
+import {Pager, PagerRef, RenderTabBarFnProps} from '#/view/com/pager/Pager'
+import {atoms as a, web} from '#/alf'
+import * as Layout from '#/components/Layout'
 import {ListMethods} from '../util/List'
+import {TabBar} from './TabBar'
 
 export interface PagerWithHeaderChildParams {
   headerHeight: number
   isFocused: boolean
-  scrollElRef: React.MutableRefObject<FlatList<any> | ScrollView | null>
+  scrollElRef: React.MutableRefObject<ListMethods | ScrollView | null>
 }
 
 export interface PagerWithHeaderProps {
@@ -20,7 +21,11 @@ export interface PagerWithHeaderProps {
     | ((props: PagerWithHeaderChildParams) => JSX.Element)
   items: string[]
   isHeaderReady: boolean
-  renderHeader?: () => JSX.Element
+  renderHeader?: ({
+    setMinimumHeight,
+  }: {
+    setMinimumHeight: () => void
+  }) => JSX.Element
   initialPage?: number
   onPageSelected?: (index: number) => void
   onCurrentPageSelected?: (index: number) => void
@@ -74,17 +79,12 @@ export const PagerWithHeader = React.forwardRef<PagerRef, PagerWithHeaderProps>(
       [onPageSelected, setCurrentPage],
     )
 
-    const onPageSelecting = React.useCallback((index: number) => {
-      setCurrentPage(index)
-    }, [])
-
     return (
       <Pager
         ref={ref}
         testID={testID}
         initialPage={initialPage}
         onPageSelected={onPageSelectedInner}
-        onPageSelecting={onPageSelecting}
         renderTabBar={renderTabBar}>
         {toArray(children)
           .filter(Boolean)
@@ -119,35 +119,30 @@ let PagerTabBar = ({
   currentPage: number
   items: string[]
   testID?: string
-  renderHeader?: () => JSX.Element
+  renderHeader?: ({
+    setMinimumHeight,
+  }: {
+    setMinimumHeight: () => void
+  }) => JSX.Element
   isHeaderReady: boolean
   onCurrentPageSelected?: (index: number) => void
   onSelect?: (index: number) => void
   tabBarAnchor?: JSX.Element | null | undefined
 }): React.ReactNode => {
-  const pal = usePalette('default')
-  const {isMobile} = useWebMediaQueries()
   return (
     <>
-      <View
-        style={[
-          !isMobile && styles.headerContainerDesktop,
-          pal.border,
-          !isHeaderReady && styles.loadingHeader,
-        ]}>
-        {renderHeader?.()}
-      </View>
+      <Layout.Center>{renderHeader?.({setMinimumHeight: noop})}</Layout.Center>
       {tabBarAnchor}
-      <View
+      <Layout.Center
         style={[
-          styles.tabBarContainer,
-          isMobile
-            ? styles.tabBarContainerMobile
-            : styles.tabBarContainerDesktop,
-          pal.border,
-          {
-            display: isHeaderReady ? undefined : 'none',
-          },
+          a.z_10,
+          web([
+            a.sticky,
+            {
+              top: 0,
+              display: isHeaderReady ? undefined : 'none',
+            },
+          ]),
         ]}>
         <TabBar
           testID={testID}
@@ -155,8 +150,10 @@ let PagerTabBar = ({
           selectedPage={currentPage}
           onSelect={onSelect}
           onPressSelected={onCurrentPageSelected}
+          dragProgress={undefined as any /* native-only */}
+          dragState={undefined as any /* native-only */}
         />
-      </View>
+      </Layout.Center>
     </>
   )
 }
@@ -182,40 +179,11 @@ function PagerItem({
   })
 }
 
-const styles = StyleSheet.create({
-  headerContainerDesktop: {
-    marginLeft: 'auto',
-    marginRight: 'auto',
-    width: 600,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-  },
-  tabBarContainer: {
-    // @ts-ignore web-only
-    position: 'sticky',
-    overflow: 'hidden',
-    top: 0,
-    zIndex: 1,
-  },
-  tabBarContainerDesktop: {
-    marginLeft: 'auto',
-    marginRight: 'auto',
-    width: 600,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-  },
-  tabBarContainerMobile: {
-    paddingLeft: 14,
-    paddingRight: 14,
-  },
-  loadingHeader: {
-    borderColor: 'transparent',
-  },
-})
-
 function toArray<T>(v: T | T[]): T[] {
   if (Array.isArray(v)) {
     return v
   }
   return [v]
 }
+
+function noop() {}

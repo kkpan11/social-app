@@ -1,21 +1,43 @@
 import React from 'react'
-import {Text as RNText, TextProps} from 'react-native'
-import {s, lh} from 'lib/styles'
-import {useTheme, TypographyVariant} from 'lib/ThemeContext'
-import {isIOS} from 'platform/detection'
-import {UITextView} from 'react-native-ui-text-view'
+import {StyleSheet, TextProps} from 'react-native'
+import {UITextView} from 'react-native-uitextview'
 
-export type CustomTextProps = TextProps & {
+import {lh, s} from '#/lib/styles'
+import {TypographyVariant, useTheme} from '#/lib/ThemeContext'
+import {logger} from '#/logger'
+import {isIOS, isWeb} from '#/platform/detection'
+import {applyFonts, useAlf} from '#/alf'
+import {
+  childHasEmoji,
+  renderChildrenWithEmoji,
+  StringChild,
+} from '#/alf/typography'
+
+export type CustomTextProps = Omit<TextProps, 'children'> & {
   type?: TypographyVariant
   lineHeight?: number
   title?: string
   dataSet?: Record<string, string | number>
   selectable?: boolean
-}
+} & (
+    | {
+        emoji: true
+        children: StringChild
+      }
+    | {
+        emoji?: false
+        children: TextProps['children']
+      }
+  )
 
-export function Text({
+export {Text_DEPRECATED as Text}
+/**
+ * @deprecated use Text from Typography instead.
+ */
+function Text_DEPRECATED({
   type = 'md',
   children,
+  emoji,
   lineHeight,
   style,
   title,
@@ -24,27 +46,64 @@ export function Text({
   ...props
 }: React.PropsWithChildren<CustomTextProps>) {
   const theme = useTheme()
-  const typography = theme.typography[type]
-  const lineHeightStyle = lineHeight ? lh(theme, type, lineHeight) : undefined
+  const {fonts} = useAlf()
 
-  if (selectable && isIOS) {
-    return (
-      <UITextView
-        style={[s.black, typography, lineHeightStyle, style]}
-        {...props}>
-        {children}
-      </UITextView>
-    )
+  if (__DEV__) {
+    if (!emoji && childHasEmoji(children)) {
+      logger.warn(
+        `Text: emoji detected but emoji not enabled: "${children}"\n\nPlease add <Text emoji />'`,
+      )
+    }
   }
 
+  const textProps = React.useMemo(() => {
+    const typography = theme.typography[type]
+    const lineHeightStyle = lineHeight ? lh(theme, type, lineHeight) : undefined
+
+    const flattened = StyleSheet.flatten([
+      s.black,
+      typography,
+      lineHeightStyle,
+      style,
+    ])
+
+    applyFonts(flattened, fonts.family)
+
+    // should always be defined on `typography`
+    // @ts-ignore
+    if (flattened.fontSize) {
+      // @ts-ignore
+      flattened.fontSize = Math.round(
+        // @ts-ignore
+        flattened.fontSize * fonts.scaleMultiplier,
+      )
+    }
+
+    return {
+      uiTextView: selectable && isIOS,
+      selectable,
+      style: flattened,
+      dataSet: isWeb
+        ? Object.assign({tooltip: title}, dataSet || {})
+        : undefined,
+      ...props,
+    }
+  }, [
+    dataSet,
+    fonts.family,
+    fonts.scaleMultiplier,
+    lineHeight,
+    props,
+    selectable,
+    style,
+    theme,
+    title,
+    type,
+  ])
+
   return (
-    <RNText
-      style={[s.black, typography, lineHeightStyle, style]}
-      // @ts-ignore web only -esb
-      dataSet={Object.assign({tooltip: title}, dataSet || {})}
-      selectable={selectable}
-      {...props}>
-      {children}
-    </RNText>
+    <UITextView {...textProps}>
+      {renderChildrenWithEmoji(children, textProps, emoji ?? false)}
+    </UITextView>
   )
 }

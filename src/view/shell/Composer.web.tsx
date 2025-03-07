@@ -1,37 +1,63 @@
 import React from 'react'
 import {StyleSheet, View} from 'react-native'
-import Animated, {FadeIn, FadeInDown, FadeOut} from 'react-native-reanimated'
-import {ComposePost} from '../com/composer/Composer'
-import {useComposerState} from 'state/shell/composer'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {useWebBodyScrollLock} from '#/lib/hooks/useWebBodyScrollLock'
+import {DismissableLayer} from '@radix-ui/react-dismissable-layer'
+import {useFocusGuards} from '@radix-ui/react-focus-guards'
+import {FocusScope} from '@radix-ui/react-focus-scope'
+import {RemoveScrollBar} from 'react-remove-scroll-bar'
+
+import {useA11y} from '#/state/a11y'
+import {useModals} from '#/state/modals'
+import {ComposerOpts, useComposerState} from '#/state/shell/composer'
 import {
   EmojiPicker,
+  EmojiPickerPosition,
   EmojiPickerState,
-} from 'view/com/composer/text-input/web/EmojiPicker.web.tsx'
+} from '#/view/com/composer/text-input/web/EmojiPicker.web'
+import {atoms as a, flatten, useBreakpoints, useTheme} from '#/alf'
+import {ComposePost, useComposerCancelRef} from '../com/composer/Composer'
 
 const BOTTOM_BAR_HEIGHT = 61
 
 export function Composer({}: {winHeight: number}) {
-  const pal = usePalette('default')
-  const {isMobile} = useWebMediaQueries()
   const state = useComposerState()
   const isActive = !!state
-  useWebBodyScrollLock(isActive)
 
+  // rendering
+  // =
+
+  if (!isActive) {
+    return null
+  }
+
+  return (
+    <>
+      <RemoveScrollBar />
+      <Inner state={state} />
+    </>
+  )
+}
+
+function Inner({state}: {state: ComposerOpts}) {
+  const ref = useComposerCancelRef()
+  const {isModalActive} = useModals()
+  const t = useTheme()
+  const {gtMobile} = useBreakpoints()
+  const {reduceMotionEnabled} = useA11y()
   const [pickerState, setPickerState] = React.useState<EmojiPickerState>({
     isOpen: false,
-    pos: {top: 0, left: 0, right: 0, bottom: 0},
+    pos: {top: 0, left: 0, right: 0, bottom: 0, nextFocusRef: null},
   })
 
-  const onOpenPicker = React.useCallback((pos: DOMRect | undefined) => {
-    if (!pos) return
-    setPickerState({
-      isOpen: true,
-      pos,
-    })
-  }, [])
+  const onOpenPicker = React.useCallback(
+    (pos: EmojiPickerPosition | undefined) => {
+      if (!pos) return
+      setPickerState({
+        isOpen: true,
+        pos,
+      })
+    },
+    [],
+  )
 
   const onClosePicker = React.useCallback(() => {
     setPickerState(prev => ({
@@ -40,69 +66,76 @@ export function Composer({}: {winHeight: number}) {
     }))
   }, [])
 
-  // rendering
-  // =
-
-  if (!isActive) {
-    return <View />
-  }
+  useFocusGuards()
 
   return (
-    <Animated.View
-      style={styles.mask}
-      aria-modal
-      accessibilityViewIsModal
-      entering={FadeIn.duration(100)}
-      exiting={FadeOut}>
-      <Animated.View
-        entering={FadeInDown.duration(150)}
-        exiting={FadeOut}
-        style={[
-          styles.container,
-          isMobile && styles.containerMobile,
-          pal.view,
-          pal.border,
-        ]}>
-        <ComposePost
-          replyTo={state.replyTo}
-          quote={state.quote}
-          onPost={state.onPost}
-          mention={state.mention}
-          openPicker={onOpenPicker}
-        />
-      </Animated.View>
-      <EmojiPicker state={pickerState} close={onClosePicker} />
-    </Animated.View>
+    <FocusScope loop trapped asChild>
+      <DismissableLayer
+        role="dialog"
+        aria-modal
+        style={flatten([
+          {position: 'fixed'},
+          a.inset_0,
+          {backgroundColor: '#000c'},
+          a.flex,
+          a.flex_col,
+          a.align_center,
+          !reduceMotionEnabled && a.fade_in,
+        ])}
+        onFocusOutside={evt => evt.preventDefault()}
+        onInteractOutside={evt => evt.preventDefault()}
+        onDismiss={() => {
+          // TEMP: remove when all modals are ALF'd -sfn
+          if (!isModalActive) {
+            ref.current?.onPressCancel()
+          }
+        }}>
+        <View
+          style={[
+            styles.container,
+            !gtMobile && styles.containerMobile,
+            t.atoms.bg,
+            t.atoms.border_contrast_medium,
+            !reduceMotionEnabled && [
+              a.zoom_fade_in,
+              {animationDelay: 0.1},
+              {animationFillMode: 'backwards'},
+            ],
+          ]}>
+          <ComposePost
+            cancelRef={ref}
+            replyTo={state.replyTo}
+            quote={state.quote}
+            onPost={state.onPost}
+            mention={state.mention}
+            openEmojiPicker={onOpenPicker}
+            text={state.text}
+            imageUris={state.imageUris}
+          />
+        </View>
+        <EmojiPicker state={pickerState} close={onClosePicker} />
+      </DismissableLayer>
+    </FocusScope>
   )
 }
 
 const styles = StyleSheet.create({
-  mask: {
-    // @ts-ignore
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#000c',
-    alignItems: 'center',
-  },
   container: {
     marginTop: 50,
     maxWidth: 600,
     width: '100%',
     paddingVertical: 0,
-    paddingHorizontal: 2,
     borderRadius: 8,
     marginBottom: 0,
     borderWidth: 1,
-    // @ts-ignore web only
+    // @ts-expect-error web only
     maxHeight: 'calc(100% - (40px * 2))',
+    overflow: 'hidden',
   },
   containerMobile: {
     borderRadius: 0,
     marginBottom: BOTTOM_BAR_HEIGHT,
-    // @ts-ignore web only
+    // @ts-expect-error web only
     maxHeight: `calc(100% - ${BOTTOM_BAR_HEIGHT}px)`,
   },
 })

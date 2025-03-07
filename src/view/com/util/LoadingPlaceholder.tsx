@@ -1,20 +1,22 @@
-import React from 'react'
+import {useMemo} from 'react'
 import {
-  StyleSheet,
+  DimensionValue,
   StyleProp,
+  StyleSheet,
   View,
   ViewStyle,
-  DimensionValue,
 } from 'react-native'
+
+import {usePalette} from '#/lib/hooks/usePalette'
+import {s} from '#/lib/styles'
+import {useTheme} from '#/lib/ThemeContext'
+import {atoms as a, useTheme as useTheme_NEW} from '#/alf'
+import {Bubble_Stroke2_Corner2_Rounded as Bubble} from '#/components/icons/Bubble'
 import {
-  HeartIcon,
-  HeartIconSolid,
-  CommentBottomArrow,
-  RepostIcon,
-} from 'lib/icons'
-import {s} from 'lib/styles'
-import {useTheme} from 'lib/ThemeContext'
-import {usePalette} from 'lib/hooks/usePalette'
+  Heart2_Filled_Stroke2_Corner0_Rounded as HeartIconFilled,
+  Heart2_Stroke2_Corner0_Rounded as HeartIconOutline,
+} from '#/components/icons/Heart2'
+import {Repost_Stroke2_Corner2_Rounded as Repost} from '#/components/icons/Repost'
 
 export function LoadingPlaceholder({
   width,
@@ -22,7 +24,7 @@ export function LoadingPlaceholder({
   style,
 }: {
   width: DimensionValue
-  height: DimensionValue
+  height: DimensionValue | undefined
   style?: StyleProp<ViewStyle>
 }) {
   const theme = useTheme()
@@ -46,13 +48,13 @@ export function PostLoadingPlaceholder({
 }: {
   style?: StyleProp<ViewStyle>
 }) {
-  const theme = useTheme()
+  const t = useTheme_NEW()
   const pal = usePalette('default')
   return (
     <View style={[styles.post, pal.view, style]}>
       <LoadingPlaceholder
-        width={52}
-        height={52}
+        width={42}
+        height={42}
         style={[
           styles.avatar,
           {
@@ -67,35 +69,47 @@ export function PostLoadingPlaceholder({
         <LoadingPlaceholder width="95%" height={6} style={{marginBottom: 8}} />
         <LoadingPlaceholder width="80%" height={6} style={{marginBottom: 11}} />
         <View style={styles.postCtrls}>
-          <View style={styles.postCtrl}>
-            <View style={[styles.postBtn, {paddingLeft: 0}]}>
-              <CommentBottomArrow
-                style={[{color: theme.palette.default.icon, marginTop: 1}]}
-                strokeWidth={3}
-                size={15}
+          <View style={[styles.postCtrl, {marginLeft: -6}]}>
+            <View style={styles.postBtn}>
+              <Bubble
+                style={[
+                  {
+                    color: t.palette.contrast_500,
+                  },
+                  {pointerEvents: 'none'},
+                ]}
+                width={18}
               />
             </View>
           </View>
           <View style={styles.postCtrl}>
             <View style={styles.postBtn}>
-              <RepostIcon
-                style={{color: theme.palette.default.icon}}
-                strokeWidth={3}
-                size={20}
+              <Repost
+                style={[
+                  {
+                    color: t.palette.contrast_500,
+                  },
+                  {pointerEvents: 'none'},
+                ]}
+                width={18}
               />
             </View>
           </View>
           <View style={styles.postCtrl}>
             <View style={styles.postBtn}>
-              <HeartIcon
-                style={{color: theme.palette.default.icon} as ViewStyle}
-                size={16}
-                strokeWidth={3}
+              <HeartIconOutline
+                style={[
+                  {
+                    color: t.palette.contrast_500,
+                  },
+                  {pointerEvents: 'none'},
+                ]}
+                width={18}
               />
             </View>
           </View>
           <View style={styles.postCtrl}>
-            <View style={styles.postBtn} />
+            <View style={[styles.postBtn, {minHeight: 30}]} />
           </View>
         </View>
       </View>
@@ -126,17 +140,17 @@ export function NotificationLoadingPlaceholder({
   const pal = usePalette('default')
   return (
     <View style={[styles.notification, pal.view, style]}>
-      <View style={{paddingLeft: 30, paddingRight: 10}}>
-        <HeartIconSolid
-          style={{color: pal.colors.backgroundLight} as ViewStyle}
-          size={30}
+      <View style={[{width: 60}, a.align_end, a.pr_sm, a.pt_2xs]}>
+        <HeartIconFilled
+          size="xl"
+          style={{color: pal.colors.backgroundLight}}
         />
       </View>
       <View style={{flex: 1}}>
-        <View style={[s.flexRow, s.mb10]}>
+        <View style={[a.flex_row, s.mb10]}>
           <LoadingPlaceholder
-            width={30}
-            height={30}
+            width={35}
+            height={35}
             style={styles.smallAvatar}
           />
         </View>
@@ -221,7 +235,7 @@ export function FeedLoadingPlaceholder({
         {
           paddingHorizontal: 12,
           paddingVertical: 18,
-          borderTopWidth: showTopBorder ? 1 : 0,
+          borderTopWidth: showTopBorder ? StyleSheet.hairlineWidth : 0,
         },
         pal.border,
         style,
@@ -269,6 +283,47 @@ export function FeedFeedLoadingPlaceholder() {
   )
 }
 
+export function ChatListItemLoadingPlaceholder({
+  style,
+}: {
+  style?: StyleProp<ViewStyle>
+}) {
+  const t = useTheme_NEW()
+  const random = useMemo(() => Math.random(), [])
+  return (
+    <View style={[a.flex_row, a.gap_md, a.px_lg, a.mt_lg, t.atoms.bg, style]}>
+      <LoadingPlaceholder width={52} height={52} style={a.rounded_full} />
+      <View>
+        <LoadingPlaceholder width={140} height={12} style={a.mt_xs} />
+        <LoadingPlaceholder width={120} height={8} style={a.mt_sm} />
+        <LoadingPlaceholder
+          width={80 + random * 100}
+          height={8}
+          style={a.mt_sm}
+        />
+      </View>
+    </View>
+  )
+}
+
+export function ChatListLoadingPlaceholder() {
+  return (
+    <>
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+      <ChatListItemLoadingPlaceholder />
+    </>
+  )
+}
+
 const styles = StyleSheet.create({
   loadingPlaceholder: {
     borderRadius: 6,
@@ -290,13 +345,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   postBtn: {
-    padding: 5,
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 5,
   },
   avatar: {
-    borderRadius: 26,
+    borderRadius: 999,
     marginRight: 10,
     marginLeft: 8,
   },
@@ -310,11 +365,11 @@ const styles = StyleSheet.create({
     margin: 1,
   },
   profileCardAvi: {
-    borderRadius: 20,
+    borderRadius: 999,
     marginRight: 10,
   },
   smallAvatar: {
-    borderRadius: 15,
+    borderRadius: 999,
     marginRight: 10,
   },
 })

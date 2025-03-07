@@ -1,10 +1,9 @@
-import React from 'react'
 import {View} from 'react-native'
 
-import {useTheme, atoms as a} from '#/alf'
+import {atoms as a, useTheme} from '#/alf'
 import {ButtonText} from '#/components/Button'
-import {InlineLink, Link} from '#/components/Link'
-import {H1, H3, Text} from '#/components/Typography'
+import {InlineLinkText, Link} from '#/components/Link'
+import {H1, Text} from '#/components/Typography'
 
 export function Links() {
   const t = useTheme()
@@ -13,27 +12,24 @@ export function Links() {
       <H1>Links</H1>
 
       <View style={[a.gap_md, a.align_start]}>
-        <InlineLink
-          to="https://blueskyweb.xyz"
-          warnOnMismatchingTextChild
-          style={[a.text_md]}>
-          External
-        </InlineLink>
-        <InlineLink to="https://blueskyweb.xyz" style={[a.text_md]}>
-          <H3>External with custom children</H3>
-        </InlineLink>
-        <InlineLink
-          to="https://blueskyweb.xyz"
-          warnOnMismatchingTextChild
-          style={[a.text_lg]}>
-          https://blueskyweb.xyz
-        </InlineLink>
-        <InlineLink
+        <InlineLinkText label="foo" to="https://google.com" style={[a.text_lg]}>
+          https://google.com
+        </InlineLinkText>
+        <InlineLinkText label="foo" to="https://google.com" style={[a.text_lg]}>
+          External with custom children (google.com)
+        </InlineLinkText>
+        <InlineLinkText
+          label="foo"
+          to="https://bsky.social"
+          style={[a.text_md, t.atoms.text_contrast_low]}>
+          Internal (bsky.social)
+        </InlineLinkText>
+        <InlineLinkText
+          label="foo"
           to="https://bsky.app/profile/bsky.app"
-          warnOnMismatchingTextChild
           style={[a.text_md]}>
-          Internal
-        </InlineLink>
+          Internal (bsky.app)
+        </InlineLinkText>
 
         <Link
           variant="solid"

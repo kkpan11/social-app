@@ -1,22 +1,30 @@
 import React from 'react'
-import {StyleProp, StyleSheet, View, ViewStyle} from 'react-native'
-import {useQueryClient} from '@tanstack/react-query'
-import {List, ListRef} from '../util/List'
-import {FeedSourceCardLoaded} from './FeedSourceCard'
-import {ErrorMessage} from '../util/error/ErrorMessage'
-import {LoadMoreRetryBtn} from '../util/LoadMoreRetryBtn'
-import {Text} from '../util/text/Text'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useProfileFeedgensQuery, RQKEY} from '#/state/queries/profile-feedgens'
-import {logger} from '#/logger'
-import {Trans, msg} from '@lingui/macro'
-import {cleanError} from '#/lib/strings/errors'
-import {useTheme} from '#/lib/ThemeContext'
-import {usePreferencesQuery} from '#/state/queries/preferences'
-import {hydrateFeedGenerator} from '#/state/queries/feed'
-import {FeedLoadingPlaceholder} from '#/view/com/util/LoadingPlaceholder'
-import {isNative} from '#/platform/detection'
+import {
+  ActivityIndicator,
+  findNodeHandle,
+  ListRenderItemInfo,
+  StyleProp,
+  StyleSheet,
+  View,
+  ViewStyle,
+} from 'react-native'
+import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
+import {useQueryClient} from '@tanstack/react-query'
+
+import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
+import {cleanError} from '#/lib/strings/errors'
+import {logger} from '#/logger'
+import {isNative, isWeb} from '#/platform/detection'
+import {usePreferencesQuery} from '#/state/queries/preferences'
+import {RQKEY, useProfileFeedgensQuery} from '#/state/queries/profile-feedgens'
+import {EmptyState} from '#/view/com/util/EmptyState'
+import {FeedLoadingPlaceholder} from '#/view/com/util/LoadingPlaceholder'
+import {atoms as a, ios, useTheme} from '#/alf'
+import * as FeedCard from '#/components/FeedCard'
+import {ErrorMessage} from '../util/error/ErrorMessage'
+import {List, ListRef} from '../util/List'
+import {LoadMoreRetryBtn} from '../util/LoadMoreRetryBtn'
 
 const LOADING = {_reactKey: '__loading__'}
 const EMPTY = {_reactKey: '__empty__'}
@@ -34,24 +42,25 @@ interface ProfileFeedgensProps {
   enabled?: boolean
   style?: StyleProp<ViewStyle>
   testID?: string
+  setScrollViewTag: (tag: number | null) => void
 }
 
 export const ProfileFeedgens = React.forwardRef<
   SectionRef,
   ProfileFeedgensProps
 >(function ProfileFeedgensImpl(
-  {did, scrollElRef, headerOffset, enabled, style, testID},
+  {did, scrollElRef, headerOffset, enabled, style, testID, setScrollViewTag},
   ref,
 ) {
-  const pal = usePalette('default')
   const {_} = useLingui()
-  const theme = useTheme()
+  const t = useTheme()
   const [isPTRing, setIsPTRing] = React.useState(false)
   const opts = React.useMemo(() => ({enabled}), [enabled])
   const {
     data,
     isFetching,
     isFetched,
+    isFetchingNextPage,
     hasNextPage,
     fetchNextPage,
     isError,
@@ -60,22 +69,22 @@ export const ProfileFeedgens = React.forwardRef<
   } = useProfileFeedgensQuery(did, opts)
   const isEmpty = !isFetching && !data?.pages[0]?.feeds.length
   const {data: preferences} = usePreferencesQuery()
+  const {isMobile} = useWebMediaQueries()
 
   const items = React.useMemo(() => {
     let items: any[] = []
     if (isError && isEmpty) {
       items = items.concat([ERROR_ITEM])
     }
-    if (!isFetched && isFetching) {
+    if (!isFetched || isFetching) {
       items = items.concat([LOADING])
     } else if (isEmpty) {
       items = items.concat([EMPTY])
     } else if (data?.pages) {
       for (const page of data?.pages) {
-        items = items.concat(page.feeds.map(feed => hydrateFeedGenerator(feed)))
+        items = items.concat(page.feeds)
       }
-    }
-    if (isError && !isEmpty) {
+    } else if (isError && !isEmpty) {
       items = items.concat([LOAD_MORE_ERROR_ITEM])
     }
     return items
@@ -125,17 +134,15 @@ export const ProfileFeedgens = React.forwardRef<
   // rendering
   // =
 
-  const renderItemInner = React.useCallback(
-    ({item}: {item: any}) => {
+  const renderItem = React.useCallback(
+    ({item, index}: ListRenderItemInfo<any>) => {
       if (item === EMPTY) {
         return (
-          <View
+          <EmptyState
+            icon="hashtag"
+            message={_(msg`You have no feeds.`)}
             testID="listsEmpty"
-            style={[{padding: 18, borderTopWidth: 1}, pal.border]}>
-            <Text style={pal.textLight}>
-              <Trans>You have no feeds.</Trans>
-            </Text>
-          </View>
+          />
         )
       } else if (item === ERROR_ITEM) {
         return (
@@ -155,19 +162,34 @@ export const ProfileFeedgens = React.forwardRef<
       }
       if (preferences) {
         return (
-          <FeedSourceCardLoaded
-            feedUri={item.uri}
-            feed={item}
-            preferences={preferences}
-            style={styles.item}
-            showLikes
-          />
+          <View
+            style={[
+              (index !== 0 || isWeb) && a.border_t,
+              t.atoms.border_contrast_low,
+              a.px_lg,
+              a.py_lg,
+            ]}>
+            <FeedCard.Default view={item} />
+          </View>
         )
       }
       return null
     },
-    [error, refetch, onPressRetryLoadMore, pal, preferences, _],
+    [_, t, error, refetch, onPressRetryLoadMore, preferences],
   )
+
+  React.useEffect(() => {
+    if (enabled && scrollElRef.current) {
+      const nativeTag = findNodeHandle(scrollElRef.current)
+      setScrollViewTag(nativeTag)
+    }
+  }, [enabled, scrollElRef, setScrollViewTag])
+
+  const ProfileFeedgensFooter = React.useCallback(() => {
+    return isFetchingNextPage ? (
+      <ActivityIndicator style={[styles.footer]} />
+    ) : null
+  }, [isFetchingNextPage])
 
   return (
     <View testID={testID} style={style}>
@@ -176,14 +198,14 @@ export const ProfileFeedgens = React.forwardRef<
         ref={scrollElRef}
         data={items}
         keyExtractor={(item: any) => item._reactKey || item.uri}
-        renderItem={renderItemInner}
+        renderItem={renderItem}
+        ListFooterComponent={ProfileFeedgensFooter}
         refreshing={isPTRing}
         onRefresh={onRefresh}
         headerOffset={headerOffset}
-        contentContainerStyle={isNative && {paddingBottom: headerOffset + 100}}
-        indicatorStyle={theme.colorScheme === 'dark' ? 'white' : 'black'}
+        progressViewOffset={ios(0)}
+        contentContainerStyle={isMobile && {paddingBottom: headerOffset + 100}}
         removeClippedSubviews={true}
-        // @ts-ignore our .web version only -prf
         desktopFixedHeight
         onEndReached={onEndReached}
       />
@@ -192,7 +214,5 @@ export const ProfileFeedgens = React.forwardRef<
 })
 
 const styles = StyleSheet.create({
-  item: {
-    paddingHorizontal: 18,
-  },
+  footer: {paddingTop: 20},
 })

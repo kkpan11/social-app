@@ -13,20 +13,24 @@ import Animated, {
   useAnimatedRef,
   useFrameCallback,
 } from 'react-native-reanimated'
-import {Image} from 'expo-image'
-import {WebView} from 'react-native-webview'
 import {useSafeAreaInsets} from 'react-native-safe-area-context'
-import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome'
+import {WebView} from 'react-native-webview'
+import {Image} from 'expo-image'
+import {AppBskyEmbedExternal} from '@atproto/api'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 import {useNavigation} from '@react-navigation/native'
-import {AppBskyEmbedExternal} from '@atproto/api'
-import {EmbedPlayerParams, getPlayerHeight} from 'lib/strings/embed-player'
+
+import {NavigationProp} from '#/lib/routes/types'
+import {EmbedPlayerParams, getPlayerAspect} from '#/lib/strings/embed-player'
+import {isNative} from '#/platform/detection'
+import {useExternalEmbedsPrefs} from '#/state/preferences'
+import {atoms as a, useTheme} from '#/alf'
+import {useDialogControl} from '#/components/Dialog'
+import {EmbedConsentDialog} from '#/components/dialogs/EmbedConsent'
+import {Fill} from '#/components/Fill'
+import {PlayButtonIcon} from '#/components/video/PlayButtonIcon'
 import {EventStopper} from '../EventStopper'
-import {isNative} from 'platform/detection'
-import {NavigationProp} from 'lib/routes/types'
-import {useExternalEmbedsPrefs} from 'state/preferences'
-import {useModalControls} from 'state/modals'
 
 interface ShouldStartLoadRequest {
   url: string
@@ -48,15 +52,15 @@ function PlaceholderOverlay({
   if (isPlayerActive && !isLoading) return null
 
   return (
-    <View style={[styles.layer, styles.overlayLayer]}>
+    <View style={[a.absolute, a.inset_0, styles.overlayLayer]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={_(msg`Play Video`)}
-        accessibilityHint={_(msg`Play Video`)}
+        accessibilityHint={_(msg`Plays the video`)}
         onPress={onPress}
-        style={[styles.overlayContainer, styles.topRadius]}>
+        style={[styles.overlayContainer]}>
         {!isPlayerActive ? (
-          <FontAwesomeIcon icon="play" size={42} color="white" />
+          <PlayButtonIcon />
         ) : (
           <ActivityIndicator size="large" color="white" />
         )}
@@ -67,14 +71,12 @@ function PlaceholderOverlay({
 
 // This renders the webview/youtube player as a separate layer
 function Player({
-  height,
   params,
   onLoad,
   isPlayerActive,
 }: {
   isPlayerActive: boolean
   params: EmbedPlayerParams
-  height: number
   onLoad: () => void
 }) {
   // ensures we only load what's requested
@@ -91,25 +93,21 @@ function Player({
   if (!isPlayerActive) return null
 
   return (
-    <View style={[styles.layer, styles.playerLayer]}>
-      <EventStopper>
-        <View style={{height, width: '100%'}}>
-          <WebView
-            javaScriptEnabled={true}
-            onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-            mediaPlaybackRequiresUserAction={false}
-            allowsInlineMediaPlayback
-            bounces={false}
-            allowsFullscreenVideo
-            nestedScrollEnabled
-            source={{uri: params.playerUri}}
-            onLoad={onLoad}
-            setSupportMultipleWindows={false} // Prevent any redirects from opening a new window (ads)
-            style={[styles.webview, styles.topRadius]}
-          />
-        </View>
-      </EventStopper>
-    </View>
+    <EventStopper style={[a.absolute, a.inset_0, styles.playerLayer]}>
+      <WebView
+        javaScriptEnabled={true}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
+        mediaPlaybackRequiresUserAction={false}
+        allowsInlineMediaPlayback
+        bounces={false}
+        allowsFullscreenVideo
+        nestedScrollEnabled
+        source={{uri: params.playerUri}}
+        onLoad={onLoad}
+        style={styles.webview}
+        setSupportMultipleWindows={false} // Prevent any redirects from opening a new window (ads)
+      />
+    </EventStopper>
   )
 }
 
@@ -121,21 +119,25 @@ export function ExternalPlayer({
   link: AppBskyEmbedExternal.ViewExternal
   params: EmbedPlayerParams
 }) {
+  const t = useTheme()
   const navigation = useNavigation<NavigationProp>()
   const insets = useSafeAreaInsets()
   const windowDims = useWindowDimensions()
   const externalEmbedsPrefs = useExternalEmbedsPrefs()
-  const {openModal} = useModalControls()
+  const consentDialogControl = useDialogControl()
 
   const [isPlayerActive, setPlayerActive] = React.useState(false)
   const [isLoading, setIsLoading] = React.useState(true)
-  const [dim, setDim] = React.useState({
-    width: 0,
-    height: 0,
-  })
+
+  const aspect = React.useMemo(() => {
+    return getPlayerAspect({
+      type: params.type,
+      width: windowDims.width,
+      hasThumb: !!link.thumb,
+    })
+  }, [params.type, windowDims.width, link.thumb])
 
   const viewRef = useAnimatedRef()
-
   const frameCallback = useFrameCallback(() => {
     const measurement = measure(viewRef)
     if (!measurement) return
@@ -180,17 +182,6 @@ export function ExternalPlayer({
     }
   }, [navigation, isPlayerActive, frameCallback])
 
-  // calculate height for the player and the screen size
-  const height = React.useMemo(
-    () =>
-      getPlayerHeight({
-        type: params.type,
-        width: dim.width,
-        hasThumb: !!link.thumb,
-      }),
-    [params.type, dim.width, link.thumb],
-  )
-
   const onLoad = React.useCallback(() => {
     setIsLoading(false)
   }, [])
@@ -201,83 +192,78 @@ export function ExternalPlayer({
       event.preventDefault()
 
       if (externalEmbedsPrefs?.[params.source] === undefined) {
-        openModal({
-          name: 'embed-consent',
-          source: params.source,
-          onAccept: () => {
-            setPlayerActive(true)
-          },
-        })
+        consentDialogControl.open()
         return
       }
 
       setPlayerActive(true)
     },
-    [externalEmbedsPrefs, openModal, params.source],
+    [externalEmbedsPrefs, consentDialogControl, params.source],
   )
 
-  // measure the layout to set sizing
-  const onLayout = React.useCallback(
-    (event: {nativeEvent: {layout: {width: any; height: any}}}) => {
-      setDim({
-        width: event.nativeEvent.layout.width,
-        height: event.nativeEvent.layout.height,
-      })
-    },
-    [],
-  )
+  const onAcceptConsent = React.useCallback(() => {
+    setPlayerActive(true)
+  }, [])
 
   return (
-    <Animated.View
-      ref={viewRef}
-      style={{height}}
-      collapsable={false}
-      onLayout={onLayout}>
-      {link.thumb && (!isPlayerActive || isLoading) && (
-        <Image
-          style={[
-            {
-              width: dim.width,
-              height,
-            },
-            styles.topRadius,
-          ]}
-          source={{uri: link.thumb}}
-          accessibilityIgnoresInvertColors
+    <>
+      <EmbedConsentDialog
+        control={consentDialogControl}
+        source={params.source}
+        onAccept={onAcceptConsent}
+      />
+
+      <Animated.View
+        ref={viewRef}
+        collapsable={false}
+        style={[aspect, a.overflow_hidden]}>
+        {link.thumb && (!isPlayerActive || isLoading) ? (
+          <>
+            <Image
+              style={[a.flex_1]}
+              source={{uri: link.thumb}}
+              accessibilityIgnoresInvertColors
+            />
+            <Fill
+              style={[
+                t.name === 'light' ? t.atoms.bg_contrast_975 : t.atoms.bg,
+                {
+                  opacity: 0.3,
+                },
+              ]}
+            />
+          </>
+        ) : (
+          <Fill
+            style={[
+              {
+                backgroundColor:
+                  t.name === 'light' ? t.palette.contrast_975 : 'black',
+                opacity: 0.3,
+              },
+            ]}
+          />
+        )}
+        <PlaceholderOverlay
+          isLoading={isLoading}
+          isPlayerActive={isPlayerActive}
+          onPress={onPlayPress}
         />
-      )}
-      <PlaceholderOverlay
-        isLoading={isLoading}
-        isPlayerActive={isPlayerActive}
-        onPress={onPlayPress}
-      />
-      <Player
-        isPlayerActive={isPlayerActive}
-        params={params}
-        height={height}
-        onLoad={onLoad}
-      />
-    </Animated.View>
+        <Player
+          isPlayerActive={isPlayerActive}
+          params={params}
+          onLoad={onLoad}
+        />
+      </Animated.View>
+    </>
   )
 }
 
 const styles = StyleSheet.create({
-  topRadius: {
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-  },
-  layer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
   overlayContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   overlayLayer: {
     zIndex: 2,

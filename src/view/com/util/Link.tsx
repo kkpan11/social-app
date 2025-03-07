@@ -2,36 +2,37 @@ import React, {ComponentProps, memo, useMemo} from 'react'
 import {
   GestureResponderEvent,
   Platform,
+  Pressable,
   StyleProp,
-  TextStyle,
   TextProps,
+  TextStyle,
+  TouchableOpacity,
   View,
   ViewStyle,
-  Pressable,
-  TouchableWithoutFeedback,
-  TouchableOpacity,
 } from 'react-native'
+import {sanitizeUrl} from '@braintree/sanitize-url'
+import {StackActions, useLinkProps} from '@react-navigation/native'
+
 import {
-  useLinkProps,
-  useNavigation,
-  StackActions,
-} from '@react-navigation/native'
-import {Text} from './text/Text'
-import {TypographyVariant} from 'lib/ThemeContext'
-import {NavigationProp} from 'lib/routes/types'
-import {router} from '../../../routes'
+  DebouncedNavigationProp,
+  useNavigationDeduped,
+} from '#/lib/hooks/useNavigationDeduped'
+import {useOpenLink} from '#/lib/hooks/useOpenLink'
+import {getTabState, TabState} from '#/lib/routes/helpers'
 import {
   convertBskyAppUrlIfNeeded,
   isExternalUrl,
   linkRequiresWarning,
-} from 'lib/strings/url-helpers'
-import {isAndroid, isWeb} from 'platform/detection'
-import {sanitizeUrl} from '@braintree/sanitize-url'
-import {PressableWithHover} from './PressableWithHover'
-import FixedTouchableHighlight from '../pager/FixedTouchableHighlight'
+} from '#/lib/strings/url-helpers'
+import {TypographyVariant} from '#/lib/ThemeContext'
+import {isAndroid, isWeb} from '#/platform/detection'
+import {emitSoftReset} from '#/state/events'
 import {useModalControls} from '#/state/modals'
-import {useOpenLink} from '#/state/preferences/in-app-browser'
-import {WebAuxClickWrapper} from 'view/com/util/WebAuxClickWrapper'
+import {WebAuxClickWrapper} from '#/view/com/util/WebAuxClickWrapper'
+import {useTheme} from '#/alf'
+import {router} from '../../../routes'
+import {PressableWithHover} from './PressableWithHover'
+import {Text} from './text/Text'
 
 type Event =
   | React.MouseEvent<HTMLAnchorElement, MouseEvent>
@@ -46,9 +47,12 @@ interface Props extends ComponentProps<typeof TouchableOpacity> {
   hoverStyle?: StyleProp<ViewStyle>
   noFeedback?: boolean
   asAnchor?: boolean
+  dataSet?: Object | undefined
   anchorNoUnderline?: boolean
   navigationAction?: 'push' | 'replace' | 'navigate'
   onPointerEnter?: () => void
+  onPointerLeave?: () => void
+  onBeforePress?: () => void
 }
 
 export const Link = memo(function Link({
@@ -62,15 +66,20 @@ export const Link = memo(function Link({
   accessible,
   anchorNoUnderline,
   navigationAction,
+  onBeforePress,
+  accessibilityActions,
+  onAccessibilityAction,
   ...props
 }: Props) {
+  const t = useTheme()
   const {closeModal} = useModalControls()
-  const navigation = useNavigation<NavigationProp>()
+  const navigation = useNavigationDeduped()
   const anchorHref = asAnchor ? sanitizeUrl(href) : undefined
   const openLink = useOpenLink()
 
   const onPress = React.useCallback(
     (e?: Event) => {
+      onBeforePress?.()
       if (typeof href === 'string') {
         return onPressInner(
           closeModal,
@@ -82,41 +91,40 @@ export const Link = memo(function Link({
         )
       }
     },
-    [closeModal, navigation, navigationAction, href, openLink],
+    [closeModal, navigation, navigationAction, href, openLink, onBeforePress],
   )
 
+  const accessibilityActionsWithActivate = [
+    ...(accessibilityActions || []),
+    {name: 'activate', label: title},
+  ]
+
   if (noFeedback) {
-    if (isAndroid) {
-      // workaround for Android not working well with left/right swipe gestures and TouchableWithoutFeedback
-      // https://github.com/callstack/react-native-pager-view/issues/424
-      return (
-        <FixedTouchableHighlight
-          testID={testID}
-          onPress={onPress}
-          // @ts-ignore web only -prf
-          href={asAnchor ? sanitizeUrl(href) : undefined}
-          accessible={accessible}
-          accessibilityRole="link"
-          {...props}>
-          <View style={style}>
-            {children ? children : <Text>{title || 'link'}</Text>}
-          </View>
-        </FixedTouchableHighlight>
-      )
-    }
     return (
       <WebAuxClickWrapper>
-        <TouchableWithoutFeedback
+        <Pressable
           testID={testID}
           onPress={onPress}
           accessible={accessible}
           accessibilityRole="link"
-          {...props}>
+          accessibilityActions={accessibilityActionsWithActivate}
+          onAccessibilityAction={e => {
+            if (e.nativeEvent.actionName === 'activate') {
+              onPress()
+            } else {
+              onAccessibilityAction?.(e)
+            }
+          }}
+          {...props}
+          android_ripple={{
+            color: t.atoms.bg_contrast_25.backgroundColor,
+          }}
+          unstable_pressDelay={isAndroid ? 90 : undefined}>
           {/* @ts-ignore web only -prf */}
           <View style={style} href={anchorHref}>
             {children ? children : <Text>{title || 'link'}</Text>}
           </View>
-        </TouchableWithoutFeedback>
+        </Pressable>
       </WebAuxClickWrapper>
     )
   }
@@ -159,8 +167,10 @@ export const TextLink = memo(function TextLink({
   dataSet,
   title,
   onPress,
-  warnOnMismatchingLabel,
+  onBeforePress,
+  disableMismatchWarning,
   navigationAction,
+  anchorNoUnderline,
   ...orgProps
 }: {
   testID?: string
@@ -172,22 +182,29 @@ export const TextLink = memo(function TextLink({
   lineHeight?: number
   dataSet?: any
   title?: string
-  warnOnMismatchingLabel?: boolean
+  disableMismatchWarning?: boolean
   navigationAction?: 'push' | 'replace' | 'navigate'
+  anchorNoUnderline?: boolean
+  onBeforePress?: () => void
 } & TextProps) {
   const {...props} = useLinkProps({to: sanitizeUrl(href)})
-  const navigation = useNavigation<NavigationProp>()
+  const navigation = useNavigationDeduped()
   const {openModal, closeModal} = useModalControls()
   const openLink = useOpenLink()
 
-  if (warnOnMismatchingLabel && typeof text !== 'string') {
+  if (!disableMismatchWarning && typeof text !== 'string') {
     console.error('Unable to detect mismatching label')
+  }
+
+  if (anchorNoUnderline) {
+    dataSet = dataSet ?? {}
+    dataSet.noUnderline = 1
   }
 
   props.onPress = React.useCallback(
     (e?: Event) => {
       const requiresWarning =
-        warnOnMismatchingLabel &&
+        !disableMismatchWarning &&
         linkRequiresWarning(href, typeof text === 'string' ? text : '')
       if (requiresWarning) {
         e?.preventDefault?.()
@@ -206,6 +223,7 @@ export const TextLink = memo(function TextLink({
         // Let the browser handle opening in new tab etc.
         return
       }
+      onBeforePress?.()
       if (onPress) {
         e?.preventDefault?.()
         // @ts-ignore function signature differs by platform -prf
@@ -221,13 +239,14 @@ export const TextLink = memo(function TextLink({
       )
     },
     [
+      onBeforePress,
       onPress,
       closeModal,
       openModal,
       navigation,
       href,
       text,
-      warnOnMismatchingLabel,
+      disableMismatchWarning,
       navigationAction,
       openLink,
     ],
@@ -277,7 +296,10 @@ interface TextLinkOnWebOnlyProps extends TextProps {
   accessibilityHint?: string
   title?: string
   navigationAction?: 'push' | 'replace' | 'navigate'
+  disableMismatchWarning?: boolean
+  onBeforePress?: () => void
   onPointerEnter?: () => void
+  anchorNoUnderline?: boolean
 }
 export const TextLinkOnWebOnly = memo(function DesktopWebTextLink({
   testID,
@@ -288,6 +310,8 @@ export const TextLinkOnWebOnly = memo(function DesktopWebTextLink({
   numberOfLines,
   lineHeight,
   navigationAction,
+  disableMismatchWarning,
+  onBeforePress,
   ...props
 }: TextLinkOnWebOnlyProps) {
   if (isWeb) {
@@ -302,6 +326,8 @@ export const TextLinkOnWebOnly = memo(function DesktopWebTextLink({
         lineHeight={lineHeight}
         title={props.title}
         navigationAction={navigationAction}
+        disableMismatchWarning={disableMismatchWarning}
+        onBeforePress={onBeforePress}
         {...props}
       />
     )
@@ -335,7 +361,7 @@ const EXEMPT_PATHS = ['/robots.txt', '/security.txt', '/.well-known/']
 // -prf
 function onPressInner(
   closeModal = () => {},
-  navigation: NavigationProp,
+  navigation: DebouncedNavigationProp,
   href: string,
   navigationAction: 'push' | 'replace' | 'navigate' = 'push',
   openLink: (href: string) => void,
@@ -376,15 +402,22 @@ function onPressInner(
     } else {
       closeModal() // close any active modals
 
+      const [routeName, params] = router.matchPath(href)
       if (navigationAction === 'push') {
         // @ts-ignore we're not able to type check on this one -prf
-        navigation.dispatch(StackActions.push(...router.matchPath(href)))
+        navigation.dispatch(StackActions.push(routeName, params))
       } else if (navigationAction === 'replace') {
         // @ts-ignore we're not able to type check on this one -prf
-        navigation.dispatch(StackActions.replace(...router.matchPath(href)))
+        navigation.dispatch(StackActions.replace(routeName, params))
       } else if (navigationAction === 'navigate') {
-        // @ts-ignore we're not able to type check on this one -prf
-        navigation.navigate(...router.matchPath(href))
+        const state = navigation.getState()
+        const tabState = getTabState(state, routeName)
+        if (tabState === TabState.InsideAtRoot) {
+          emitSoftReset()
+        } else {
+          // @ts-ignore we're not able to type check on this one -prf
+          navigation.navigate(routeName, params)
+        }
       } else {
         throw Error('Unsupported navigator action.')
       }

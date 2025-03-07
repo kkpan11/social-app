@@ -1,73 +1,160 @@
-import 'lib/sentry' // must be near top
+import '#/logger/sentry/setup' // must be near top
+import '#/view/icons'
+import './style.css'
 
-import React, {useState, useEffect} from 'react'
-import {QueryClientProvider} from '@tanstack/react-query'
-import {SafeAreaProvider} from 'react-native-safe-area-context'
+import React, {useEffect, useState} from 'react'
 import {RootSiblingParent} from 'react-native-root-siblings'
+import {SafeAreaProvider} from 'react-native-safe-area-context'
+import {msg} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
 
-import 'view/icons'
-
-import {ThemeProvider as Alf} from '#/alf'
-import {useColorModeTheme} from '#/alf/util/useColorModeTheme'
+import {QueryProvider} from '#/lib/react-query'
+import {Provider as StatsigProvider} from '#/lib/statsig/statsig'
+import {ThemeProvider} from '#/lib/ThemeContext'
+import I18nProvider from '#/locale/i18nProvider'
+import {logger} from '#/logger'
+import {Provider as A11yProvider} from '#/state/a11y'
+import {Provider as MutedThreadsProvider} from '#/state/cache/thread-mutes'
+import {Provider as DialogStateProvider} from '#/state/dialogs'
+import {listenSessionDropped} from '#/state/events'
+import {
+  beginResolveGeolocation,
+  ensureGeolocationResolved,
+  Provider as GeolocationProvider,
+} from '#/state/geolocation'
+import {Provider as HomeBadgeProvider} from '#/state/home-badge'
+import {Provider as InvitesStateProvider} from '#/state/invites'
+import {Provider as LightboxStateProvider} from '#/state/lightbox'
+import {MessagesProvider} from '#/state/messages'
+import {Provider as ModalStateProvider} from '#/state/modals'
 import {init as initPersistedState} from '#/state/persisted'
-import {Shell} from 'view/shell/index'
-import {ToastContainer} from 'view/com/util/Toast.web'
-import {ThemeProvider} from 'lib/ThemeContext'
-import {queryClient} from 'lib/react-query'
-import {Provider as ShellStateProvider} from 'state/shell'
-import {Provider as ModalStateProvider} from 'state/modals'
-import {Provider as DialogStateProvider} from 'state/dialogs'
-import {Provider as LightboxStateProvider} from 'state/lightbox'
-import {Provider as MutedThreadsProvider} from 'state/muted-threads'
-import {Provider as InvitesStateProvider} from 'state/invites'
-import {Provider as PrefsStateProvider} from 'state/preferences'
-import {Provider as LoggedOutViewProvider} from 'state/shell/logged-out'
-import {Provider as SelectedFeedProvider} from 'state/shell/selected-feed'
-import I18nProvider from './locale/i18nProvider'
+import {Provider as PrefsStateProvider} from '#/state/preferences'
+import {Provider as LabelDefsProvider} from '#/state/preferences/label-defs'
+import {Provider as ModerationOptsProvider} from '#/state/preferences/moderation-opts'
+import {Provider as UnreadNotifsProvider} from '#/state/queries/notifications/unread'
 import {
   Provider as SessionProvider,
+  SessionAccount,
   useSession,
   useSessionApi,
-} from 'state/session'
-import {Provider as UnreadNotifsProvider} from 'state/queries/notifications/unread'
-import * as persisted from '#/state/persisted'
+} from '#/state/session'
+import {readLastActiveAccount} from '#/state/session/util'
+import {Provider as ShellStateProvider} from '#/state/shell'
+import {Provider as ComposerProvider} from '#/state/shell/composer'
+import {Provider as LightStatusBarProvider} from '#/state/shell/light-status-bar'
+import {Provider as LoggedOutViewProvider} from '#/state/shell/logged-out'
+import {Provider as ProgressGuideProvider} from '#/state/shell/progress-guide'
+import {Provider as SelectedFeedProvider} from '#/state/shell/selected-feed'
+import {Provider as StarterPackProvider} from '#/state/shell/starter-pack'
+import {Provider as HiddenRepliesProvider} from '#/state/threadgate-hidden-replies'
+import {Provider as TrendingConfigProvider} from '#/state/trending-config'
+import {Provider as ActiveVideoProvider} from '#/view/com/util/post-embeds/ActiveVideoWebContext'
+import {Provider as VideoVolumeProvider} from '#/view/com/util/post-embeds/VideoVolumeContext'
+import * as Toast from '#/view/com/util/Toast'
+import {ToastContainer} from '#/view/com/util/Toast.web'
+import {Shell} from '#/view/shell/index'
+import {ThemeProvider as Alf} from '#/alf'
+import {useColorModeTheme} from '#/alf/util/useColorModeTheme'
+import {NuxDialogs} from '#/components/dialogs/nuxs'
+import {useStarterPackEntry} from '#/components/hooks/useStarterPackEntry'
+import {Provider as IntentDialogProvider} from '#/components/intents/IntentDialogs'
 import {Provider as PortalProvider} from '#/components/Portal'
+import {BackgroundNotificationPreferencesProvider} from '../modules/expo-background-notification-handler/src/BackgroundNotificationHandlerProvider'
+
+/**
+ * Begin geolocation ASAP
+ */
+beginResolveGeolocation()
 
 function InnerApp() {
-  const {isInitialLoad, currentAccount} = useSession()
+  const [isReady, setIsReady] = React.useState(false)
+  const {currentAccount} = useSession()
   const {resumeSession} = useSessionApi()
   const theme = useColorModeTheme()
+  const {_} = useLingui()
+  const hasCheckedReferrer = useStarterPackEntry()
 
   // init
   useEffect(() => {
-    const account = persisted.get('session').currentAccount
-    resumeSession(account)
+    async function onLaunch(account?: SessionAccount) {
+      try {
+        if (account) {
+          await resumeSession(account)
+        }
+      } catch (e) {
+        logger.error(`session: resumeSession failed`, {message: e})
+      } finally {
+        setIsReady(true)
+      }
+    }
+    const account = readLastActiveAccount()
+    onLaunch(account)
   }, [resumeSession])
 
+  useEffect(() => {
+    return listenSessionDropped(() => {
+      Toast.show(
+        _(msg`Sorry! Your session expired. Please sign in again.`),
+        'info',
+      )
+    })
+  }, [_])
+
   // wait for session to resume
-  if (isInitialLoad) return null
+  if (!isReady || !hasCheckedReferrer) return null
 
   return (
     <Alf theme={theme}>
-      <React.Fragment
-        // Resets the entire tree below when it changes:
-        key={currentAccount?.did}>
-        <LoggedOutViewProvider>
-          <SelectedFeedProvider>
-            <UnreadNotifsProvider>
-              <ThemeProvider theme={theme}>
-                {/* All components should be within this provider */}
-                <RootSiblingParent>
-                  <SafeAreaProvider>
-                    <Shell />
-                  </SafeAreaProvider>
-                </RootSiblingParent>
+      <ThemeProvider theme={theme}>
+        <RootSiblingParent>
+          <VideoVolumeProvider>
+            <ActiveVideoProvider>
+              <React.Fragment
+                // Resets the entire tree below when it changes:
+                key={currentAccount?.did}>
+                <QueryProvider currentDid={currentAccount?.did}>
+                  <ComposerProvider>
+                    <StatsigProvider>
+                      <MessagesProvider>
+                        {/* LabelDefsProvider MUST come before ModerationOptsProvider */}
+                        <LabelDefsProvider>
+                          <ModerationOptsProvider>
+                            <LoggedOutViewProvider>
+                              <SelectedFeedProvider>
+                                <HiddenRepliesProvider>
+                                  <HomeBadgeProvider>
+                                    <UnreadNotifsProvider>
+                                      <BackgroundNotificationPreferencesProvider>
+                                        <MutedThreadsProvider>
+                                          <SafeAreaProvider>
+                                            <ProgressGuideProvider>
+                                              <TrendingConfigProvider>
+                                                <IntentDialogProvider>
+                                                  <Shell />
+                                                  <NuxDialogs />
+                                                </IntentDialogProvider>
+                                              </TrendingConfigProvider>
+                                            </ProgressGuideProvider>
+                                          </SafeAreaProvider>
+                                        </MutedThreadsProvider>
+                                      </BackgroundNotificationPreferencesProvider>
+                                    </UnreadNotifsProvider>
+                                  </HomeBadgeProvider>
+                                </HiddenRepliesProvider>
+                              </SelectedFeedProvider>
+                            </LoggedOutViewProvider>
+                          </ModerationOptsProvider>
+                        </LabelDefsProvider>
+                      </MessagesProvider>
+                    </StatsigProvider>
+                  </ComposerProvider>
+                </QueryProvider>
                 <ToastContainer />
-              </ThemeProvider>
-            </UnreadNotifsProvider>
-          </SelectedFeedProvider>
-        </LoggedOutViewProvider>
-      </React.Fragment>
+              </React.Fragment>
+            </ActiveVideoProvider>
+          </VideoVolumeProvider>
+        </RootSiblingParent>
+      </ThemeProvider>
     </Alf>
   )
 }
@@ -76,7 +163,9 @@ function App() {
   const [isReady, setReady] = useState(false)
 
   React.useEffect(() => {
-    initPersistedState().then(() => setReady(true))
+    Promise.all([initPersistedState(), ensureGeolocationResolved()]).then(() =>
+      setReady(true),
+    )
   }, [])
 
   if (!isReady) {
@@ -88,29 +177,33 @@ function App() {
    * that is set up in the InnerApp component above.
    */
   return (
-    <QueryClientProvider client={queryClient}>
-      <SessionProvider>
-        <ShellStateProvider>
+    <GeolocationProvider>
+      <A11yProvider>
+        <SessionProvider>
           <PrefsStateProvider>
-            <MutedThreadsProvider>
-              <InvitesStateProvider>
-                <ModalStateProvider>
-                  <DialogStateProvider>
-                    <LightboxStateProvider>
-                      <I18nProvider>
+            <I18nProvider>
+              <ShellStateProvider>
+                <InvitesStateProvider>
+                  <ModalStateProvider>
+                    <DialogStateProvider>
+                      <LightboxStateProvider>
                         <PortalProvider>
-                          <InnerApp />
+                          <StarterPackProvider>
+                            <LightStatusBarProvider>
+                              <InnerApp />
+                            </LightStatusBarProvider>
+                          </StarterPackProvider>
                         </PortalProvider>
-                      </I18nProvider>
-                    </LightboxStateProvider>
-                  </DialogStateProvider>
-                </ModalStateProvider>
-              </InvitesStateProvider>
-            </MutedThreadsProvider>
+                      </LightboxStateProvider>
+                    </DialogStateProvider>
+                  </ModalStateProvider>
+                </InvitesStateProvider>
+              </ShellStateProvider>
+            </I18nProvider>
           </PrefsStateProvider>
-        </ShellStateProvider>
-      </SessionProvider>
-    </QueryClientProvider>
+        </SessionProvider>
+      </A11yProvider>
+    </GeolocationProvider>
   )
 }
 
